@@ -3,7 +3,7 @@
 > Self-hosted, anonymous, multi-inbox disposable email (Temp-Mail style).
 > **Differentiator:** one anonymous session owns many live addresses at once, all feeding a **Unified Inbox** in real time.
 
-**Stack:** Next.js · NestJS · PostgreSQL · Redis · BullMQ · Postfix · mailparser · SSE · TanStack Query · Docker Compose · Nginx · S3-compatible object storage
+**Stack:** Next.js · NestJS · PostgreSQL · Prisma · Redis · BullMQ · Postfix · mailparser · SSE · TanStack Query · Docker Compose · Nginx · S3-compatible object storage · Turborepo · pnpm
 
 ---
 
@@ -487,7 +487,7 @@ flowchart LR
 
 ---
 
-## 6. Backend Architecture (NestJS Monorepo, 3 Deployable Apps)
+## 6. Backend Architecture (Turborepo Monorepo, 3 Deployable NestJS Apps)
 
 ```mermaid
 flowchart TB
@@ -511,11 +511,11 @@ flowchart TB
     ATTW["Attachment Module<br/>upload · delete objects"]:::queue
   end
 
-  subgraph LIBS["libs · shared code"]
-    DBL[("Database lib<br/>Prisma or TypeORM")]:::db
-    QL[["Queue lib<br/>queue names + job DTOs"]]:::queue
-    EVL["Events lib<br/>event types + publisher"]:::be
-    STL[("Storage lib<br/>S3 client")]:::db
+  subgraph LIBS["packages · shared code"]
+    DBL[("@repo/database<br/>Prisma schema + client")]:::db
+    QL[["@repo/queue<br/>queue names + job DTOs"]]:::queue
+    EVL["@repo/events<br/>event types + publisher"]:::be
+    STL[("@repo/storage<br/>S3 client")]:::db
   end
 
   SEC --> SESS
@@ -657,6 +657,23 @@ erDiagram
 | Attachments | `INDEX(message_id)` |
 | EmailEvents | `INDEX(inbox_id, id)` for Last-Event-ID replay |
 | FKs | `ON DELETE CASCADE` from Sessions → Inboxes → Messages → Attachments / EmailEvents (object storage cleaned by job) |
+
+**Implementation:** the schema is defined with Prisma in `packages/database/prisma/schema.prisma` and exposed to the apps as `@repo/database`.
+
+| Diagram entity | Prisma model | PostgreSQL table |
+|---|---|---|
+| AnonymousSessions | `AnonymousSession` | `anonymous_sessions` |
+| Domains | `Domain` | `domains` |
+| Inboxes | `Inbox` | `inboxes` |
+| Messages | `Message` | `messages` |
+| Attachments | `Attachment` | `attachments` |
+| EmailEvents | `EmailEvent` | `email_events` |
+
+- Columns are `snake_case` in PostgreSQL and `camelCase` in the Prisma client.
+- `status` and `event_type` are PostgreSQL enums (`session_status`, `inbox_status`, `email_event_type`).
+- `EmailEvents.message_id` is nullable, because a `FAILED` event has no stored message.
+- `Attachments.storage_key` and `sha256` are nullable, because blocked attachments keep metadata only.
+- The partial index on `inboxes (expires_at) WHERE status = 'active'` is a plain index in the Prisma schema; the `WHERE` clause must be added by hand in the migration SQL.
 
 ---
 
@@ -992,6 +1009,40 @@ flowchart TB
 
 ---
 
+## Repository Layout
+
+pnpm workspace managed by Turborepo. Requires Node 24+ and pnpm 11.
+
+```
+apps/
+  web/       Next.js frontend (components, hooks, lib, providers)
+  api/       NestJS HTTP app: security, session, inbox, message, attachment, realtime
+  ingest/    NestJS LMTP app: ingestion
+  worker/    NestJS BullMQ app: processing, otp, expiration, attachment
+packages/
+  database/           @repo/database · Prisma schema, migrations, client
+  queue/              @repo/queue · queue names and job payload types
+  events/             @repo/events · event types and Redis channel names
+  storage/            @repo/storage · S3 client
+  ui/                 @repo/ui · shared React components
+  eslint-config/      shared ESLint presets
+  typescript-config/  shared tsconfig presets (nestjs, node-library, nextjs, react-library)
+infra/
+  docker/ nginx/ postfix/   deployment configuration
+```
+
+| Command | What it does |
+|---|---|
+| `pnpm install` | Install all workspace dependencies |
+| `pnpm dev` | Build the shared packages, then run every app in watch mode |
+| `pnpm build` | Build all packages and apps |
+| `pnpm check-types` / `pnpm lint` | Type-check / lint the whole workspace |
+| `pnpm --filter @repo/database db:migrate` | Create and apply a migration (needs `DATABASE_URL`, see `packages/database/.env.example`) |
+| `pnpm --filter @repo/database db:deploy` | Apply existing migrations in production |
+| `pnpm --filter @repo/database db:generate` | Regenerate the Prisma client |
+
+---
+
 ## Appendix A · Key Design Decisions
 
 | Decision | Choice | Why |
@@ -1003,7 +1054,8 @@ flowchart TB
 | Dedupe | BullMQ `jobId` + DB unique index | Two layers: in-flight duplicates and already-stored duplicates |
 | Real-time transport | SSE over Redis Pub/Sub | One-way server push is all that is needed; works through Nginx; scales across API replicas |
 | Mail and app on separate VPS | Yes | Port 25 reputation and attack surface isolated from the web app; joined by WireGuard |
-| One NestJS monorepo, 3 apps | api, ingest, worker | Shared entities and DTOs, independent scaling and deployment |
+| One Turborepo monorepo, 3 NestJS apps | api, ingest, worker (plus the Next.js web app) | Shared schema, queue and event definitions in `packages/`, independent scaling and deployment |
+| ORM | Prisma 7 with the `pg` driver adapter | Typed client generated from one schema file, built-in migrations, shared by all three backend apps |
 
 ## Appendix B · Default Configuration
 
@@ -1027,7 +1079,7 @@ Every diagram is a Mermaid block, so you can export all of them at once:
 
 ```bash
 npm install -g @mermaid-js/mermaid-cli
-mmdc -i temp-mail-system-design.md -o whiteboard.png -s 3 -b white
+mmdc -i README.md -o whiteboard.png -s 3 -b white
 # produces whiteboard-1.png, whiteboard-2.png, ... one per diagram
 ```
 

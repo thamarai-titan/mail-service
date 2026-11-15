@@ -1,0 +1,154 @@
+// Data model for the temp-mail platform. Mirrors README section 7.
+
+generator client {
+  provider            = "prisma-client"
+  output              = "../src/generated/prisma"
+  runtime             = "nodejs"
+  moduleFormat        = "esm"
+  importFileExtension = "js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+enum SessionStatus {
+  active
+  expired
+  revoked
+
+  @@map("session_status")
+}
+
+enum InboxStatus {
+  active
+  expired
+  deleted
+
+  @@map("inbox_status")
+}
+
+enum EmailEventType {
+  RECEIVED
+  OTP_EXTRACTED
+  DUPLICATE
+  FAILED
+
+  @@map("email_event_type")
+}
+
+model AnonymousSession {
+  id         String        @id @default(uuid()) @db.Uuid
+  /// HMAC-SHA256 of the session token. The raw token is never stored.
+  tokenHash  String        @unique @map("token_hash")
+  /// HMAC of the client IP, kept for abuse handling only.
+  ipHash     String?       @map("ip_hash")
+  inboxQuota Int           @default(10) @map("inbox_quota")
+  status     SessionStatus @default(active)
+  createdAt  DateTime      @default(now()) @map("created_at") @db.Timestamptz(6)
+  lastSeenAt DateTime      @default(now()) @map("last_seen_at") @db.Timestamptz(6)
+  /// Sliding 24h.
+  expiresAt  DateTime      @map("expires_at") @db.Timestamptz(6)
+
+  inboxes Inbox[]
+
+  @@index([expiresAt])
+  @@map("anonymous_sessions")
+}
+
+model Domain {
+  id        String   @id @default(uuid()) @db.Uuid
+  name      String   @unique
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  inboxes Inbox[]
+
+  @@map("domains")
+}
+
+model Inbox {
+  id           String      @id @default(uuid()) @db.Uuid
+  sessionId    String      @map("session_id") @db.Uuid
+  domainId     String      @map("domain_id") @db.Uuid
+  /// 12 random characters.
+  localPart    String      @map("local_part")
+  /// local_part@domain
+  address      String      @unique
+  status       InboxStatus @default(active)
+  messageCount Int         @default(0) @map("message_count")
+  createdAt    DateTime    @default(now()) @map("created_at") @db.Timestamptz(6)
+  /// Set by the API to now + 60 min on creation.
+  expiresAt    DateTime    @map("expires_at") @db.Timestamptz(6)
+  deletedAt    DateTime?   @map("deleted_at") @db.Timestamptz(6)
+
+  session  AnonymousSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  domain   Domain           @relation(fields: [domainId], references: [id])
+  messages Message[]
+  events   EmailEvent[]
+
+  @@index([sessionId, status])
+  @@index([expiresAt])
+  @@map("inboxes")
+}
+
+model Message {
+  id              String   @id @default(uuid()) @db.Uuid
+  inboxId         String   @map("inbox_id") @db.Uuid
+  messageIdHeader String?  @map("message_id_header")
+  /// SHA-256 of Message-ID + body.
+  dedupeHash      String   @map("dedupe_hash")
+  fromAddress     String   @map("from_address")
+  fromName        String?  @map("from_name")
+  subject         String?
+  textBody        String?  @map("text_body")
+  htmlSanitized   String?  @map("html_sanitized")
+  otpCode         String?  @map("otp_code")
+  sizeBytes       BigInt   @map("size_bytes")
+  rawObjectKey    String   @map("raw_object_key")
+  isRead          Boolean  @default(false) @map("is_read")
+  receivedAt      DateTime @default(now()) @map("received_at") @db.Timestamptz(6)
+
+  inbox       Inbox        @relation(fields: [inboxId], references: [id], onDelete: Cascade)
+  attachments Attachment[]
+  events      EmailEvent[]
+
+  @@unique([inboxId, dedupeHash])
+  @@index([inboxId, receivedAt(sort: Desc)])
+  @@map("messages")
+}
+
+model Attachment {
+  id          String  @id @default(uuid()) @db.Uuid
+  messageId   String  @map("message_id") @db.Uuid
+  filename    String
+  contentType String  @map("content_type")
+  sizeBytes   BigInt  @map("size_bytes")
+  /// Null when the attachment was blocked and its content stripped.
+  storageKey  String? @map("storage_key")
+  sha256      String?
+  isBlocked   Boolean @default(false) @map("is_blocked")
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@index([messageId])
+  @@map("attachments")
+}
+
+model EmailEvent {
+  /// Monotonic, used as the SSE event id.
+  id        BigInt         @id @default(autoincrement())
+  /// Null for events with no stored message (e.g. FAILED).
+  messageId String?        @map("message_id") @db.Uuid
+  /// Denormalized for Last-Event-ID replay.
+  inboxId   String         @map("inbox_id") @db.Uuid
+  eventType EmailEventType @map("event_type")
+  payload   Json?
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+
+  message Message? @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  inbox   Inbox    @relation(fields: [inboxId], references: [id], onDelete: Cascade)
+
+  @@index([inboxId, id])
+  @@map("email_events")
+}
