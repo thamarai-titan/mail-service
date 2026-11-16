@@ -1,0 +1,42 @@
+meta {
+  name: Unified inbox
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/messages?view=unified
+  body: none
+  auth: none
+}
+
+params:query {
+  view: unified
+  ~limit: 10
+  ~cursor: {{nextCursor}}
+}
+
+script:post-response {
+  if (res.getStatus() === 200) {
+    const body = res.getBody();
+    bru.setVar("nextCursor", body.nextCursor);
+    if (body.messages.length > 0) {
+      bru.setVar("messageId", body.messages[0].id);
+    }
+  }
+}
+
+tests {
+  test("returns a page of messages", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().messages).to.be.an("array");
+  });
+}
+
+docs {
+  Messages from every live inbox of the session, newest first, 50 per page.
+  Enable `cursor` to fetch the next page (it is saved from the previous response) and
+  `limit` for smaller pages. Saves the first message's id as `messageId`.
+
+  To get sample messages locally: pnpm db:fake-mail <inbox address>
+}

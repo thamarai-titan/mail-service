@@ -1,9 +1,6 @@
 import { HttpStatus } from '@nestjs/common';
 import { ApiError } from '../common/api-error.js';
 
-export const invalidRequest = (message: string) =>
-  new ApiError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR', message);
-
 export const quotaExceeded = (remaining: number) =>
   new ApiError(
     HttpStatus.CONFLICT,

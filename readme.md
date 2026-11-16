@@ -1038,6 +1038,7 @@ infra/
 | `pnpm infra:up` / `pnpm infra:down` | Start / stop local PostgreSQL and Redis (`infra/docker/docker-compose.dev.yml`) |
 | `pnpm db:migrate` | Apply migrations to the local database (and create one after a schema change) |
 | `pnpm db:seed` | Insert the `MAIL_DOMAIN` row into `domains` |
+| `pnpm db:fake-mail <address>` | Development only: add three sample messages to an existing inbox |
 | `pnpm dev` | Build the shared packages, then run every app in watch mode |
 | `pnpm build` | Build all packages and apps |
 | `pnpm check-types` / `pnpm lint` | Type-check / lint the whole workspace |

@@ -1,0 +1,23 @@
+meta {
+  name: Open message
+  type: http
+  seq: 3
+}
+
+get {
+  url: {{baseUrl}}/messages/{{messageId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns the full message, now marked read", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().isRead).to.equal(true);
+    expect(res.getBody().attachments).to.be.an("array");
+  });
+}
+
+docs {
+  Uses the `messageId` saved by "Unified inbox". Opening a message marks it read.
+}

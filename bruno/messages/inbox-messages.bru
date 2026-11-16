@@ -1,0 +1,29 @@
+meta {
+  name: Messages in one inbox
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/messages?inboxId={{inboxId}}
+  body: none
+  auth: none
+}
+
+params:query {
+  inboxId: {{inboxId}}
+  ~limit: 10
+}
+
+tests {
+  test("returns only that inbox's messages", function () {
+    expect(res.getStatus()).to.equal(200);
+    const ids = res.getBody().messages.map((message) => message.inboxId);
+    expect(ids.every((id) => id === bru.getVar("inboxId"))).to.equal(true);
+  });
+}
+
+docs {
+  Uses the `inboxId` saved by "Create inboxes".
+  404 when the inbox is expired, deleted or belongs to another session.
+}

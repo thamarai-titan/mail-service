@@ -1,0 +1,21 @@
+meta {
+  name: Delete message
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/messages/{{messageId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("deletes the message", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}
+
+docs {
+  Deletes the message saved by "Unified inbox". A second run answers 404.
+}

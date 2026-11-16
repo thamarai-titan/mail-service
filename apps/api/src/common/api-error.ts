@@ -11,3 +11,9 @@ export class ApiError extends HttpException {
     super({ statusCode: status, code, message, ...details }, status);
   }
 }
+
+export const validationError = (message: string) =>
+  new ApiError(HttpStatus.BAD_REQUEST, 'VALIDATION_ERROR', message);
+
+export const UUID_PATTERN =
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
