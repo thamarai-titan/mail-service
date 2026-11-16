@@ -20,9 +20,23 @@ function required(name: string): string {
   return value;
 }
 
+function serverPepper(): string {
+  const value = required('SERVER_PEPPER');
+  if (value.length < 32) {
+    throw new Error('SERVER_PEPPER must be at least 32 characters.');
+  }
+  return value;
+}
+
 /** Validated runtime configuration. Fails fast at startup when a required variable is missing. */
 @Injectable()
 export class AppConfig {
   readonly databaseUrl = required('DATABASE_URL');
   readonly redisUrl = required('REDIS_URL');
+  /** HMAC key for session tokens and IP addresses. Changing it invalidates every session. */
+  readonly serverPepper = serverPepper();
+  /** Browsers only send Secure cookies over HTTPS, so plain-HTTP local development turns it off. */
+  readonly secureCookies = process.env['NODE_ENV'] === 'production';
+  /** Number of reverse proxies in front of the API, so `req.ip` is the real client address. */
+  readonly trustProxyHops = Number(process.env['TRUST_PROXY_HOPS'] ?? 0);
 }

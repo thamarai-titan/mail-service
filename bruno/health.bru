@@ -1,0 +1,22 @@
+meta {
+  name: Health
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{baseUrl}}/health
+  body: none
+  auth: none
+}
+
+tests {
+  test("PostgreSQL and Redis are up", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().checks).to.eql({ database: "up", redis: "up" });
+  });
+}
+
+docs {
+  200 when PostgreSQL and Redis both answer, 503 with the same body shape otherwise.
+}

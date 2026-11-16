@@ -8,7 +8,9 @@ export class RedisService extends Redis implements OnModuleDestroy {
   private readonly logger = new Logger(RedisService.name);
 
   constructor(config: AppConfig) {
-    super(config.redisUrl);
+    // Fail commands quickly while Redis is unreachable so callers can fall back to PostgreSQL
+    // instead of holding the request open through 20 reconnect attempts.
+    super(config.redisUrl, { maxRetriesPerRequest: 1 });
     // Without a listener ioredis prints every reconnect failure as an unhandled error event.
     // Connection failures arrive as an AggregateError with an empty message, so fall back to the code.
     this.on('error', (error: NodeJS.ErrnoException) =>

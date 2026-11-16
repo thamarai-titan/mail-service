@@ -1,4 +1,10 @@
-import { Module } from '@nestjs/common';
+import { Global, Module } from '@nestjs/common';
+import { Hasher } from './hasher.js';
+import { RateLimiter } from './rate-limiter.js';
 
-@Module({})
+@Global()
+@Module({
+  providers: [Hasher, RateLimiter],
+  exports: [Hasher, RateLimiter],
+})
 export class SecurityModule {}

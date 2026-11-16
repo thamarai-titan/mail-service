@@ -3,7 +3,10 @@ import { HealthController } from './health.controller.js';
 import type { PrismaService } from '../prisma/prisma.service.js';
 import type { RedisService } from '../redis/redis.service.js';
 
-function controllerWith(database: () => Promise<unknown>, redis: () => Promise<unknown>) {
+function controllerWith(
+  database: () => Promise<unknown>,
+  redis: () => Promise<unknown>,
+) {
   return new HealthController(
     { $queryRaw: database } as unknown as PrismaService,
     { ping: redis } as unknown as RedisService,

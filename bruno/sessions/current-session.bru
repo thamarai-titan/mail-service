@@ -1,0 +1,23 @@
+meta {
+  name: Current session
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/sessions/me
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns the session behind the cookie", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().sessionId).to.be.a("string");
+  });
+}
+
+docs {
+  Run "Create session" first. Answers 401 NO_SESSION without the cookie and
+  401 SESSION_INVALID for an unknown, expired or revoked one.
+}

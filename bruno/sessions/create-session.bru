@@ -1,0 +1,33 @@
+meta {
+  name: Create session
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/sessions
+  body: none
+  auth: none
+}
+
+tests {
+  test("creates the session", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().sessionId).to.be.a("string");
+  });
+
+  test("sets an HttpOnly, SameSite=Strict sid cookie", function () {
+    const cookie = [].concat(res.getHeader("set-cookie")).join("; ");
+    expect(cookie).to.contain("sid=");
+    expect(cookie).to.contain("HttpOnly");
+    expect(cookie).to.contain("SameSite=Strict");
+  });
+}
+
+docs {
+  Creates an anonymous session. The token comes back only in the HttpOnly `sid` cookie,
+  which Bruno's cookie jar stores and sends on later requests.
+
+  Limited to 5 per IP per hour; the 6th answers 429 with a Retry-After header.
+  To reset the limit locally, delete the `rl:sess-create:*` keys in Redis.
+}
