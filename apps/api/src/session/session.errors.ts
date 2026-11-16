@@ -1,11 +1,5 @@
-import { HttpException, HttpStatus } from '@nestjs/common';
-
-/** Error body shared by the API: the frontend switches on `code`. */
-export class ApiError extends HttpException {
-  constructor(status: HttpStatus, code: string, message: string) {
-    super({ statusCode: status, code, message }, status);
-  }
-}
+import { HttpStatus } from '@nestjs/common';
+import { ApiError } from '../common/api-error.js';
 
 /** No cookie at all: the frontend should create a session. */
 export const noSession = () =>

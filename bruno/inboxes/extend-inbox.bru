@@ -1,0 +1,23 @@
+meta {
+  name: Extend inbox
+  type: http
+  seq: 3
+}
+
+patch {
+  url: {{baseUrl}}/inboxes/{{inboxId}}/extend
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns the inbox with a later expiry", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().id).to.equal(bru.getVar("inboxId"));
+  });
+}
+
+docs {
+  Adds one hour, capped at 24 hours after the inbox was created.
+  404 when the inbox is expired, deleted or belongs to another session.
+}

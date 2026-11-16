@@ -7,7 +7,7 @@ import {
 import type { Request, Response } from 'express';
 import { Hasher } from '../security/hasher.js';
 import { RateLimiter } from '../security/rate-limiter.js';
-import { ApiError } from './session.errors.js';
+import { ApiError } from '../common/api-error.js';
 
 export const SESSIONS_PER_IP_PER_HOUR = 5;
 

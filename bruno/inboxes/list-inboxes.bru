@@ -1,0 +1,22 @@
+meta {
+  name: List inboxes
+  type: http
+  seq: 2
+}
+
+get {
+  url: {{baseUrl}}/inboxes
+  body: none
+  auth: none
+}
+
+tests {
+  test("returns this session's live inboxes", function () {
+    expect(res.getStatus()).to.equal(200);
+    expect(res.getBody().inboxes).to.be.an("array");
+  });
+}
+
+docs {
+  Active, unexpired inboxes of the current session, newest first, with unread counts.
+}

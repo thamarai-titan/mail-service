@@ -1,0 +1,21 @@
+meta {
+  name: Delete inbox
+  type: http
+  seq: 4
+}
+
+delete {
+  url: {{baseUrl}}/inboxes/{{inboxId}}
+  body: none
+  auth: none
+}
+
+tests {
+  test("deletes the inbox", function () {
+    expect(res.getStatus()).to.equal(204);
+  });
+}
+
+docs {
+  Deletes the inbox stored by "Create inboxes". A second run answers 404.
+}

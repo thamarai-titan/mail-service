@@ -1,0 +1,39 @@
+meta {
+  name: Create inboxes
+  type: http
+  seq: 1
+}
+
+post {
+  url: {{baseUrl}}/inboxes
+  body: json
+  auth: none
+}
+
+body:json {
+  {
+    "count": 1
+  }
+}
+
+script:post-response {
+  if (res.getStatus() === 201) {
+    bru.setVar("inboxId", res.getBody().inboxes[0].id);
+  }
+}
+
+tests {
+  test("creates the requested number of inboxes", function () {
+    expect(res.getStatus()).to.equal(201);
+    expect(res.getBody().inboxes).to.have.lengthOf(1);
+    expect(res.getBody().inboxes[0].address).to.contain("@");
+  });
+}
+
+docs {
+  Run "Create session" first. `count` is 1 to 5 (default 1); `domainId` is optional.
+  Stores the first new inbox's id as `inboxId` for the Extend and Delete requests.
+
+  409 QUOTA_EXCEEDED when the session would pass 10 active inboxes (body includes `remaining`).
+  429 RATE_LIMITED after 20 creations in an hour. 422 DOMAIN_UNAVAILABLE for a bad domain.
+}
