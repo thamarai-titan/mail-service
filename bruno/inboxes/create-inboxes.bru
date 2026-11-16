@@ -12,7 +12,7 @@ post {
 
 body:json {
   {
-    "count": 1
+    "count": 2
   }
 }
 
@@ -33,7 +33,7 @@ tests {
 docs {
   Run "Create session" first. `count` is 1 to 5 (default 1); `domainId` is optional.
   Stores the first new inbox's id as `inboxId` for the Extend and Delete requests.
-
+  
   409 QUOTA_EXCEEDED when the session would pass 10 active inboxes (body includes `remaining`).
   429 RATE_LIMITED after 20 creations in an hour. 422 DOMAIN_UNAVAILABLE for a bad domain.
 }

@@ -1,0 +1,191 @@
+.viewer {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+}
+
+.placeholder {
+  margin: auto;
+  padding: 24px;
+  color: var(--muted);
+  text-align: center;
+}
+
+.header {
+  padding: 16px 20px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.toolbar {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+}
+
+.back {
+  display: none;
+}
+
+.subject {
+  flex: 1;
+  min-width: 0;
+  font-size: 18px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+  overflow-wrap: anywhere;
+}
+
+.subject[data-missing="true"] {
+  color: var(--muted);
+  font-style: italic;
+  font-weight: 500;
+}
+
+.details {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 2px 10px;
+  margin-top: 10px;
+  font-size: 13px;
+}
+
+.details dt {
+  color: var(--muted);
+}
+
+.details dd {
+  overflow-wrap: anywhere;
+}
+
+.mono {
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.otp {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.otpCode {
+  font-family: var(--font-mono);
+  font-size: 16px;
+  letter-spacing: 0.1em;
+}
+
+.secondary {
+  padding: 6px 12px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+}
+
+.secondary:hover {
+  background: var(--surface-hover);
+}
+
+.body {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+/* Email HTML assumes a white page, so the frame stays white in dark mode too. */
+.frame {
+  flex: 1;
+  width: 100%;
+  min-height: 240px;
+  border: none;
+  background: #fff;
+}
+
+.text {
+  flex: 1;
+  overflow: auto;
+  padding: 20px;
+  font-family: var(--font-sans);
+  font-size: 14px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.attachments {
+  padding: 12px 20px 16px;
+  border-top: 1px solid var(--border);
+}
+
+.attachmentsTitle {
+  margin-bottom: 8px;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.attachmentList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  list-style: none;
+}
+
+.attachment {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  max-width: 100%;
+  padding: 5px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 13px;
+}
+
+.attachment[data-blocked="true"] {
+  color: var(--muted);
+}
+
+.attachmentName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.attachment[data-blocked="true"] .attachmentName {
+  text-decoration: line-through;
+}
+
+.attachmentNote {
+  flex: none;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+@media (max-width: 900px) {
+  .viewer {
+    display: none;
+  }
+
+  .viewer[data-open="true"] {
+    display: flex;
+    position: fixed;
+    inset: 0;
+    z-index: 10;
+  }
+
+  .back {
+    display: inline-grid;
+  }
+}

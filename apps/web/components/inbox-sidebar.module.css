@@ -1,0 +1,152 @@
+.sidebar {
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  border-right: 1px solid var(--border);
+}
+
+.brand {
+  padding: 18px 16px 4px;
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.01em;
+}
+
+.tagline {
+  padding: 0 16px 14px;
+  color: var(--muted);
+  font-size: 12.5px;
+}
+
+.generate {
+  display: flex;
+  gap: 8px;
+  padding: 0 16px;
+}
+
+.count {
+  width: 58px;
+  padding: 0 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--surface);
+}
+
+.generateButton {
+  flex: 1;
+  height: 36px;
+  border-radius: var(--radius);
+  background: var(--accent);
+  color: var(--accent-fg);
+  font-weight: 600;
+}
+
+.generateButton:hover:not(:disabled) {
+  filter: brightness(1.08);
+}
+
+.notice {
+  padding: 8px 16px 0;
+  font-size: 12.5px;
+  color: var(--muted);
+}
+
+.notice[data-tone="error"] {
+  color: var(--danger);
+}
+
+.list {
+  flex: 1;
+  overflow-y: auto;
+  margin-top: 14px;
+  padding: 0 8px 8px;
+  list-style: none;
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  border-radius: var(--radius);
+  padding-right: 6px;
+}
+
+.item:hover {
+  background: var(--surface-hover);
+}
+
+.item[data-selected="true"] {
+  background: var(--accent-soft);
+}
+
+.select {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 4px 9px 8px;
+  text-align: left;
+  border-radius: var(--radius);
+}
+
+.selectText {
+  flex: 1;
+  min-width: 0;
+}
+
+.address {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: var(--font-mono);
+  font-size: 12.5px;
+}
+
+.unifiedLabel {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-weight: 600;
+}
+
+.countdown {
+  display: block;
+  margin-top: 1px;
+  color: var(--muted);
+  font-size: 12px;
+  font-variant-numeric: tabular-nums;
+}
+
+.countdown[data-low="true"] {
+  color: var(--warn);
+}
+
+.divider {
+  margin: 8px 8px 6px;
+  color: var(--muted);
+  font-size: 11.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.empty {
+  padding: 14px 8px;
+  color: var(--muted);
+  font-size: 13px;
+}
+
+@media (max-width: 900px) {
+  .sidebar {
+    border-right: none;
+    border-bottom: 1px solid var(--border);
+  }
+
+  /* Keep the messages within reach below a long list of addresses. */
+  .list {
+    flex: none;
+    max-height: 40dvh;
+  }
+}

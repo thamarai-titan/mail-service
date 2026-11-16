@@ -129,6 +129,8 @@ describe('Inboxes (e2e)', () => {
     const bulk = await createInboxes(cookie, 5);
 
     expect(new Set(bulk.map((inbox) => inbox.address)).size).toBe(5);
+    // The create response is already in list order, so the sidebar never reshuffles.
+    expect((await listInboxes(cookie)).slice(0, 5)).toEqual(bulk);
     const listed = await listInboxes(cookie);
     expect(listed).toHaveLength(6);
     expect(listed.at(-1)).toEqual(first);

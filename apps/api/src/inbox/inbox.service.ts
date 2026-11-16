@@ -140,7 +140,10 @@ export class InboxService {
         expiresAt: inbox.expiresAt,
       })),
     );
-    return created.map((inbox) => ({ ...inbox, unreadCount: 0 }));
+    // Same order as list(): inboxes created together share a timestamp, so the id breaks the tie.
+    return created
+      .map((inbox) => ({ ...inbox, unreadCount: 0 }))
+      .sort((a, b) => (a.id < b.id ? 1 : -1));
   }
 
   /** The session's live inboxes, newest first. */

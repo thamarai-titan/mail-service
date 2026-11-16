@@ -20,7 +20,7 @@
     "db:deploy": "prisma migrate deploy",
     "db:studio": "prisma studio",
     "db:seed": "pnpm run build && prisma db seed",
-    "db:fake-mail": "pnpm run build && node dist/fake-mail.js"
+    "db:fake-mail": "[ -f dist/fake-mail.js ] || pnpm run build; node dist/fake-mail.js"
   },
   "dependencies": {
     "@prisma/adapter-pg": "7.10.1",
