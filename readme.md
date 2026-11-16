@@ -1034,10 +1034,14 @@ infra/
 | Command | What it does |
 |---|---|
 | `pnpm install` | Install all workspace dependencies |
+| `cp .env.example .env` | Create the one env file every app and the Prisma CLI read |
+| `pnpm infra:up` / `pnpm infra:down` | Start / stop local PostgreSQL and Redis (`infra/docker/docker-compose.dev.yml`) |
+| `pnpm db:migrate` | Apply migrations to the local database (and create one after a schema change) |
+| `pnpm db:seed` | Insert the `MAIL_DOMAIN` row into `domains` |
 | `pnpm dev` | Build the shared packages, then run every app in watch mode |
 | `pnpm build` | Build all packages and apps |
 | `pnpm check-types` / `pnpm lint` | Type-check / lint the whole workspace |
-| `pnpm --filter @repo/database db:migrate` | Create and apply a migration (needs `DATABASE_URL`, see `packages/database/.env.example`) |
+| `pnpm --filter @repo/database db:migrate` | Create and apply a migration (needs `DATABASE_URL`, see `.env.example`) |
 | `pnpm --filter @repo/database db:deploy` | Apply existing migrations in production |
 | `pnpm --filter @repo/database db:generate` | Regenerate the Prisma client |
 

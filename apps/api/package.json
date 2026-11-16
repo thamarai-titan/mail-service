@@ -30,6 +30,7 @@
     "@repo/events": "workspace:*",
     "@repo/queue": "workspace:*",
     "@repo/storage": "workspace:*",
+    "ioredis": "^6.0.0",
     "reflect-metadata": "^0.2.2",
     "rxjs": "^7.8.1"
   },
