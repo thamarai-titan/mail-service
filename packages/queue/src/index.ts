@@ -1,5 +1,7 @@
 import { createHash } from 'node:crypto';
 
+export * from './addresses.js';
+
 /** BullMQ queue names shared by the ingest and worker apps (README section 8). */
 export const QUEUE_NAMES = {
   emailProcessing: 'email-processing',

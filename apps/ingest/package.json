@@ -7,15 +7,16 @@
   "type": "module",
   "scripts": {
     "build": "nest build",
-    "format": "prettier --write \"src/**/*.ts\"",
+    "format": "prettier --write \"src/**/*.ts\" \"test/**/*.ts\"",
     "start": "nest start",
     "dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
-    "lint": "oxlint --type-aware src/",
+    "lint": "oxlint --type-aware src/ test/",
     "test": "vitest run --passWithNoTests",
     "check-types": "tsc --noEmit",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -23,14 +24,19 @@
     "@repo/database": "workspace:*",
     "@repo/queue": "workspace:*",
     "@repo/storage": "workspace:*",
+    "bullmq": "^6.7.8",
+    "ioredis": "^6.0.0",
+    "mailparser": "^3.14.5",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "smtp-server": "^3.21.6"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
     "@repo/typescript-config": "workspace:*",
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^24.0.0",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",

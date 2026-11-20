@@ -1,7 +1,9 @@
 import { Module } from '@nestjs/common';
-import { IngestionModule } from './ingestion/ingestion.module.js';
+import { CoreModule } from './core/core.module.js';
+import { LmtpModule } from './lmtp/lmtp.module.js';
+import { PolicyModule } from './policy/policy.module.js';
 
 @Module({
-  imports: [IngestionModule],
+  imports: [CoreModule, LmtpModule, PolicyModule],
 })
 export class AppModule {}

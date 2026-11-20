@@ -1,4 +1,5 @@
 import { Injectable, Logger } from '@nestjs/common';
+import { addressKey, serializeAddressEntry } from '@repo/queue';
 import { RedisService } from '../redis/redis.service.js';
 
 export interface RegisteredAddress {
@@ -7,8 +8,6 @@ export interface RegisteredAddress {
   sessionId: string;
   expiresAt: Date;
 }
-
-export const addressKey = (address: string) => `addr:${address}`;
 
 /**
  * Redis index of live addresses (`addr:ADDRESS`), read by the SMTP recipient check.
@@ -25,11 +24,7 @@ export class AddressRegistry {
     const pipeline = this.redis.pipeline();
     for (const entry of entries) {
       const key = addressKey(entry.address);
-      pipeline.hset(key, {
-        inboxId: entry.inboxId,
-        sessionId: entry.sessionId,
-        expiresAt: entry.expiresAt.getTime(),
-      });
+      pipeline.hset(key, serializeAddressEntry(entry));
       pipeline.pexpireat(key, entry.expiresAt.getTime());
     }
     await this.run('register', () => pipeline.exec());
