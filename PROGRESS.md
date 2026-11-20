@@ -2,8 +2,8 @@
 
 Where the build stands and what comes next. The full system design is in [readme.md](readme.md); this file tracks how much of it exists.
 
-**Last updated:** 16 Nov 2026, after Day 5.
-**Branch:** `day-1-local-infra` holds all the work below. Nothing has been merged to `main` yet.
+**Last updated:** 20 Nov 2026, after Day 5.
+**Branch:** all work below is on `main`. From Day 6 onward, work continues directly on `main`.
 
 ## Status at a glance
 
