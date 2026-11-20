@@ -2,7 +2,7 @@
 
 Where the build stands and what comes next. The full system design is in [readme.md](readme.md); this file tracks how much of it exists.
 
-**Last updated:** 20 Nov 2026, after Day 5.
+**Last updated:** 20 Nov 2026, after Day 6.
 **Branch:** all work below is on `main`. From Day 6 onward, work continues directly on `main`.
 
 ## Status at a glance
@@ -14,14 +14,14 @@ Where the build stands and what comes next. The full system design is in [readme
 | 3 | Inboxes: generate, list, extend, delete | Done | `556346c` |
 | 4 | Message read API | Done | `2c70e9a` |
 | 5 | Web dashboard | Done | `96c627b` |
-| 6 | Worker pipeline | Next | |
-| 7 | Realtime updates (SSE) | To do | |
+| 6 | Worker pipeline | Done | `7c5fd45` |
+| 7 | Realtime updates (SSE) | Next | |
 | 8 | Ingest app (LMTP) | To do | |
 | 9 | Real mail: Postfix and DNS on the VPS | To do | |
 | 10 | Expiration and cleanup jobs | To do | |
 | 11 | Production deployment and hardening | To do | |
 
-What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. Mail does not arrive from the internet yet; sample messages are inserted with a helper script.
+What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. A queued email goes through the worker into the dashboard, with clean HTML, its OTP and downloadable attachments. Mail does not arrive from the internet yet: `pnpm mail:test` queues one by hand.
 
 ## Running it locally
 
@@ -30,17 +30,22 @@ Needs Node 24+, pnpm 11 and Docker Desktop running.
 ```
 cp .env.example .env    # first time only; then set SERVER_PEPPER to a random value
 pnpm install
-pnpm infra:up           # PostgreSQL and Redis in Docker
+pnpm infra:up           # PostgreSQL, Redis and RustFS (object storage) in Docker
 pnpm db:migrate         # apply migrations
 pnpm db:seed            # insert the mail domain (mail.localhost)
-pnpm dev                # web on :3000, API on :3001
+pnpm dev                # web on :3000, API on :3001, plus the worker
 ```
 
-Open `http://localhost:3000`, generate an address, then simulate incoming mail:
+An `.env` created before Day 6 needs the `S3_*` lines from `.env.example`.
+
+Open `http://localhost:3000`, generate an address, then send it mail through the worker:
 
 ```
-pnpm db:fake-mail <address>    # adds three sample messages; they appear within 5 seconds
+pnpm mail:test <address>                # a sample with an OTP, an inline image and two attachments
+pnpm mail:test <address> message.eml    # any .eml file
 ```
+
+`pnpm db:fake-mail <address>` still inserts three messages straight into the database, without the worker. Its attachments are not in storage, so downloading them gives a 404.
 
 Checks:
 
@@ -48,6 +53,8 @@ Checks:
 pnpm check-types && pnpm lint
 pnpm --filter api test         # unit tests
 pnpm --filter api test:e2e     # needs infra:up and db:seed
+pnpm --filter worker test
+pnpm --filter worker test:e2e  # needs infra:up and db:seed
 ```
 
 The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the folder in Bruno and pick the `local` environment. Run "Create session" first; Bruno keeps the cookie for the other requests.
@@ -94,6 +101,26 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 - The web app proxies `/api/*` to the API (`API_ORIGIN`, default `http://localhost:3001`), so the cookie is same-origin and no CORS setup is needed.
 - Code: [apps/web/components/](apps/web/components/), [apps/web/hooks/](apps/web/hooks/), [apps/web/lib/api.ts](apps/web/lib/api.ts).
 
+### Day 6: worker pipeline
+
+- RustFS 1.0.4 runs in Docker as the S3 server on `localhost:9000`. The worker creates the bucket on start. [packages/storage](packages/storage/src/index.ts) holds the client and the key layout: `raw/`, `att/`, `quarantine/`.
+- [packages/queue](packages/queue/src/index.ts) defines the job payload, the retry options and the dedupe hash: SHA-256 of the Message-ID and the body. The BullMQ job id is `<inboxId>.<dedupeHash>`, since BullMQ ids cannot contain `:`.
+- For each job the worker:
+  - skips duplicates;
+  - checks that the inbox is still live and belongs to the job's session;
+  - reads and parses the raw `.eml`;
+  - sanitizes the HTML;
+  - applies the attachment rules and uploads the allowed files;
+  - extracts the OTP;
+  - writes the message, attachments, `RECEIVED` and `OTP_EXTRACTED` events and the inbox count in one transaction;
+  - publishes `NEW_EMAIL` on `events:session:<id>`.
+- HTML: scripts, forms, frames, `<style>` blocks and event handlers are removed, and links open in a new tab with no referrer. Inline `cid:` images become `data:` URIs.
+- Attachments: at most 5 MB each and 10 stored per message. Executables, scripts, disk images and macro-enabled Office files are blocked by extension or content type. A blocked file keeps its row so the reader sees it was removed.
+- Failures: 5 attempts with backoff from 2 seconds. A missing or unparseable raw file fails at once. Either way the job ends up in `email-processing-dlq` and is logged as a `FAILED` event.
+- An inbox that expired or was deleted after the mail was accepted: the message and its files are discarded.
+- `GET /api/attachments/:id/download` streams the file as a download, with `nosniff`, a sandbox CSP and `no-store`. Blocked attachments return 403 `ATTACHMENT_BLOCKED`. Another session's attachment is a 404. The dashboard links each allowed attachment to it.
+- Code: [apps/worker/src/](apps/worker/src/), [apps/api/src/attachment/](apps/api/src/attachment/), [send-test-mail.ts](apps/worker/src/dev/send-test-mail.ts).
+
 ## Differences from the design
 
 | Design says | What was built | Why |
@@ -102,30 +129,22 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 | Reserved-word check on addresses | Not built | A random 12-character address cannot equal `postmaster` or `admin` |
 | Create and list return a bare list | They return `{ "inboxes": [...] }` | Leaves room to add fields later |
 | NestJS Throttler with a Redis store | A small Redis counter in [rate-limiter.ts](apps/api/src/security/rate-limiter.ts) | Fewer dependencies; same limits |
-| MinIO for local object storage | Nothing yet | MinIO's images can no longer be pulled from Docker Hub or Quay |
+| MinIO for local object storage | RustFS | MinIO's images can no longer be pulled from Docker Hub or Quay |
+| Ingest parses the mail and passes a `parsedRef` to the worker | The worker reads the raw `.eml` and parses it itself | One stored copy of each message, and any job can be replayed from the raw file |
+| OTP extraction as a separate `otp-extraction` child job | Extracted inside the processing job, saved in the same transaction | It is a fast regex pass; a second queue would delay `NEW_EMAIL` and add a failure point |
+| Attachment rules enforced by both ingest and worker | Enforced by the worker | The worker is where files are uploaded; ingest will only check size and that the mail parses |
 | Live updates over SSE | The dashboard polls every 5 seconds | Temporary, until Day 7 |
 
 ## Not built yet
 
-- Object storage, and therefore attachment download and raw `.eml` storage. RustFS and SeaweedFS images are both available as a MinIO replacement; one has to be chosen on Day 6.
 - The CSRF check (required `X-Requested-With` header on mutations) and the general limit of 60 requests per minute.
 - The `INBOX_DELETED` and `INBOX_EXPIRED` events.
 - Expired inboxes are hidden by every query, but no job marks them expired or deletes their data yet.
+- Nothing re-queues jobs from the dead-letter queue yet (`failed-job-retry`, Day 10).
+- Nothing deletes stored objects yet. A raw file uploaded for a duplicate that BullMQ then skips is left behind until the cleanup jobs on Day 10.
 - Helmet and CORS settings.
 
 ## Plan for the coming days
-
-### Day 6: worker pipeline
-
-Build the BullMQ consumer in [apps/worker](apps/worker) (design section 4, steps W1 to W7).
-
-- Choose and add the local object storage server; implement the S3 client in [packages/storage](packages/storage).
-- Define the `email-processing` job payload in [packages/queue](packages/queue).
-- Worker: skip duplicates, check the inbox is still active, sanitize HTML, upload attachments, write the message, attachments and event in one transaction, extract the OTP, publish `NEW_EMAIL` to Redis.
-- Retries: 5 attempts with exponential backoff, then a dead-letter queue.
-- Attachment download endpoint in the API.
-
-Done when a job enqueued by hand becomes a message in the dashboard.
 
 ### Day 7: realtime updates
 
@@ -142,6 +161,7 @@ Build the LMTP server in [apps/ingest](apps/ingest) (design section 4, steps E8 
 - Accept a message over LMTP, store the raw `.eml`, parse it with mailparser, apply attachment rules, resolve the inbox, enqueue the job.
 - The recipient policy endpoint Postfix will call, backed by the `addr:` keys in Redis.
 - Move the `addr:` key helper from the API into a shared package so ingest uses the same one.
+- Queue jobs with `EMAIL_PROCESSING_JOB_OPTIONS` and `emailProcessingJobId` from `@repo/queue`, as [send-test-mail.ts](apps/worker/src/dev/send-test-mail.ts) does.
 
 Done when a message sent to the local LMTP port with `swaks` lands in the dashboard.
 
@@ -171,6 +191,8 @@ Done when an expired inbox disappears from the dashboard on its own and its data
 
 ## Things that are easy to trip over
 
+- **The worker must be running for `pnpm mail:test` mail to appear.** `pnpm dev` starts it. Queued jobs wait in Redis until it does.
+- **The RustFS credentials are the ones in `docker-compose.dev.yml`.** Changing `S3_ACCESS_KEY` or `S3_SECRET_KEY` in `.env` alone breaks storage.
 - **Rate limits during local testing.** 5 sessions per hour per IP and 20 inbox creations per hour. To reset: `docker exec mail-service-dev-redis-1 sh -c "redis-cli --scan --pattern 'rl:*' | xargs -r redis-cli del"`.
 - **`TRUST_PROXY_HOPS` must be 1 behind Nginx.** Otherwise every user shares one IP for the rate limits.
 - **Changing `SERVER_PEPPER` logs everyone out.** Stored token hashes no longer match.

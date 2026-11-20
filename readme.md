@@ -1035,10 +1035,11 @@ infra/
 |---|---|
 | `pnpm install` | Install all workspace dependencies |
 | `cp .env.example .env` | Create the one env file every app and the Prisma CLI read |
-| `pnpm infra:up` / `pnpm infra:down` | Start / stop local PostgreSQL and Redis (`infra/docker/docker-compose.dev.yml`) |
+| `pnpm infra:up` / `pnpm infra:down` | Start / stop local PostgreSQL, Redis and RustFS object storage (`infra/docker/docker-compose.dev.yml`) |
 | `pnpm db:migrate` | Apply migrations to the local database (and create one after a schema change) |
 | `pnpm db:seed` | Insert the `MAIL_DOMAIN` row into `domains` |
 | `pnpm db:fake-mail <address>` | Development only: add three sample messages to an existing inbox |
+| `pnpm mail:test <address> [file.eml]` | Development only: queue an email for the worker, as the ingest app will |
 | `pnpm dev` | Build the shared packages, then run every app in watch mode |
 | `pnpm build` | Build all packages and apps |
 | `pnpm check-types` / `pnpm lint` | Type-check / lint the whole workspace |
