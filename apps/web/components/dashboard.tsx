@@ -2,6 +2,7 @@
 
 import { useState } from "react";
 import { useInboxes } from "../hooks/use-inboxes";
+import { useLiveUpdates } from "../hooks/use-live-updates";
 import type { InboxView } from "../lib/types";
 import styles from "./dashboard.module.css";
 import { EmailViewer } from "./email-viewer";
@@ -10,6 +11,8 @@ import { MessageList } from "./message-list";
 
 export function Dashboard() {
   const inboxesQuery = useInboxes();
+  // Wait for the first successful request, which guarantees a session cookie for the stream.
+  useLiveUpdates(inboxesQuery.isSuccess);
   const [selectedView, setSelectedView] = useState<InboxView>("unified");
   const [messageId, setMessageId] = useState<string | null>(null);
 

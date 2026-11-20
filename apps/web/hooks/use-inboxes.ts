@@ -1,20 +1,20 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { Inbox } from "../lib/types";
+import { FALLBACK_POLL_MS, useLiveStatus } from "../lib/live-status";
 
 export const INBOXES_KEY = ["inboxes"] as const;
 export const MAX_ACTIVE_INBOXES = 10;
 export const MAX_PER_REQUEST = 5;
 
-/** Until live updates exist, new mail and expiries are picked up by polling. */
-export const POLL_INTERVAL_MS = 5000;
-
 export function useInboxes() {
+  const live = useLiveStatus() === "live";
   return useQuery({
     queryKey: INBOXES_KEY,
     queryFn: async () =>
       (await api<{ inboxes: Inbox[] }>("GET", "/inboxes")).inboxes,
-    refetchInterval: POLL_INTERVAL_MS,
+    // The event stream announces changes; poll slowly only while it is down.
+    refetchInterval: live ? false : FALLBACK_POLL_MS,
   });
 }
 

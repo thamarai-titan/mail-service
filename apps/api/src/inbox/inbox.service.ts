@@ -1,5 +1,7 @@
 import { Injectable } from '@nestjs/common';
+import { EVENT_TYPES } from '@repo/events';
 import { PrismaService } from '../prisma/prisma.service.js';
+import { EventPublisher } from '../realtime/event-publisher.js';
 import { Hasher } from '../security/hasher.js';
 import { RateLimiter } from '../security/rate-limiter.js';
 import { sessionInvalid } from '../session/session.errors.js';
@@ -56,6 +58,7 @@ export class InboxService {
     private readonly hasher: Hasher,
     private readonly generator: AddressGenerator,
     private readonly registry: AddressRegistry,
+    private readonly events: EventPublisher,
   ) {}
 
   /** Throws the 429 error carrying `retryAfterSeconds` when the hourly creation budget is spent. */
@@ -215,6 +218,12 @@ export class InboxService {
     const inbox = deleted[0];
     if (!inbox) throw inboxNotFound();
     await this.registry.remove(inbox.address);
+    // Other open tabs of the session drop the inbox too.
+    await this.events.publish(sessionId, {
+      type: EVENT_TYPES.inboxDeleted,
+      eventId: null,
+      inboxId,
+    });
   }
 
   private async resolveDomain(

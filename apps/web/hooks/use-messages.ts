@@ -7,12 +7,14 @@ import {
 } from "@tanstack/react-query";
 import { api } from "../lib/api";
 import type { InboxView, MessageDetail, MessagePage } from "../lib/types";
-import { INBOXES_KEY, POLL_INTERVAL_MS } from "./use-inboxes";
+import { INBOXES_KEY } from "./use-inboxes";
+import { FALLBACK_POLL_MS, useLiveStatus } from "../lib/live-status";
 
 const MESSAGES_KEY = ["messages"] as const;
 
 /** One page-by-page list per view: the unified inbox or a single inbox. */
 export function useMessages(view: InboxView) {
+  const live = useLiveStatus() === "live";
   return useInfiniteQuery({
     queryKey: [...MESSAGES_KEY, view],
     queryFn: ({ pageParam }) => {
@@ -24,7 +26,8 @@ export function useMessages(view: InboxView) {
     },
     initialPageParam: null as string | null,
     getNextPageParam: (lastPage) => lastPage.nextCursor,
-    refetchInterval: POLL_INTERVAL_MS,
+    // The event stream announces new mail; poll slowly only while it is down.
+    refetchInterval: live ? false : FALLBACK_POLL_MS,
   });
 }
 
