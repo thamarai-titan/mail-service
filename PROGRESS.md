@@ -2,7 +2,7 @@
 
 Where the build stands and what comes next. The full system design is in [readme.md](readme.md); this file tracks how much of it exists.
 
-**Last updated:** 20 Nov 2026, after Day 6.
+**Last updated:** 20 Nov 2026, after Day 7.
 **Branch:** all work below is on `main`. From Day 6 onward, work continues directly on `main`.
 
 ## Status at a glance
@@ -15,13 +15,13 @@ Where the build stands and what comes next. The full system design is in [readme
 | 4 | Message read API | Done | `2c70e9a` |
 | 5 | Web dashboard | Done | `96c627b` |
 | 6 | Worker pipeline | Done | `7c5fd45` |
-| 7 | Realtime updates (SSE) | Next | |
-| 8 | Ingest app (LMTP) | To do | |
+| 7 | Realtime updates (SSE) | Done | `18b2824` |
+| 8 | Ingest app (LMTP) | Next | |
 | 9 | Real mail: Postfix and DNS on the VPS | To do | |
 | 10 | Expiration and cleanup jobs | To do | |
 | 11 | Production deployment and hardening | To do | |
 
-What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. A queued email goes through the worker into the dashboard, with clean HTML, its OTP and downloadable attachments. Mail does not arrive from the internet yet: `pnpm mail:test` queues one by hand.
+What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. A queued email goes through the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. Mail does not arrive from the internet yet: `pnpm mail:test` queues one by hand.
 
 ## Running it locally
 
@@ -38,7 +38,7 @@ pnpm dev                # web on :3000, API on :3001, plus the worker
 
 An `.env` created before Day 6 needs the `S3_*` lines from `.env.example`.
 
-Open `http://localhost:3000`, generate an address, then send it mail through the worker:
+Open `http://localhost:3000`, generate an address, then send it mail through the worker. It appears without a refresh:
 
 ```
 pnpm mail:test <address>                # a sample with an OTP, an inline image and two attachments
@@ -121,6 +121,27 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 - `GET /api/attachments/:id/download` streams the file as a download, with `nosniff`, a sandbox CSP and `no-store`. Blocked attachments return 403 `ATTACHMENT_BLOCKED`. Another session's attachment is a 404. The dashboard links each allowed attachment to it.
 - Code: [apps/worker/src/](apps/worker/src/), [apps/api/src/attachment/](apps/api/src/attachment/), [send-test-mail.ts](apps/worker/src/dev/send-test-mail.ts).
 
+### Day 7: live updates
+
+- `GET /api/events` is a server-sent event stream for the session. One Redis `PSUBSCRIBE events:session:*` per API process fans events out to that process's open streams.
+- Each event is `id: <email_events.id>`, `event: <type>` and `data: <JSON>`. Events with no stored row, such as `INBOX_DELETED`, have no `id` line, so the browser's `Last-Event-ID` stays on the last stored event.
+- On reconnect, `NEW_EMAIL` events after `Last-Event-ID` are replayed from `email_events`, up to 100. Live events that arrive during the replay are held back and sent after it, so nothing is missed or sent twice.
+- A heartbeat comment goes out every 25 seconds, and `retry: 3000` sets the reconnect delay. The headers `Cache-Control: no-cache, no-transform` and `X-Accel-Buffering: no` keep proxies from buffering.
+- Each stream closes after 30 minutes. The browser reconnects at once, which runs `SessionGuard` again, so an expired session stops receiving events. A session can hold 5 streams; a sixth gets 429 `TOO_MANY_STREAMS`.
+- `DELETE /api/inboxes/:id` publishes `INBOX_DELETED`, so the session's other tabs drop the inbox.
+- Dashboard ([use-live-updates.ts](apps/web/hooks/use-live-updates.ts)):
+  - It subscribes after the first successful request, so the session cookie exists.
+  - `NEW_EMAIL` refetches the unified list, that inbox's list and the inbox counts.
+  - `INBOX_DELETED` and `INBOX_EXPIRED` remove the inbox from the cache.
+  - After any reconnect it refetches everything once.
+  - If the server refuses the stream, for example because the session expired, it calls `/sessions/me` to get a new session and retries with backoff up to 30 seconds.
+- The 5-second polling is gone. Lists poll every 30 seconds only while the stream is down.
+- Checked in headless Chrome:
+  - New mail appeared about 0.1 seconds after the send command finished, with one refetch of the messages and one of the inboxes.
+  - A deletion from another tab showed in about 0.1 seconds.
+  - After an API restart, mail stored while the API was down appeared about 3 seconds after it came back.
+- Code: [apps/api/src/realtime/](apps/api/src/realtime/), [apps/web/hooks/use-live-updates.ts](apps/web/hooks/use-live-updates.ts).
+
 ## Differences from the design
 
 | Design says | What was built | Why |
@@ -133,26 +154,20 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 | Ingest parses the mail and passes a `parsedRef` to the worker | The worker reads the raw `.eml` and parses it itself | One stored copy of each message, and any job can be replayed from the raw file |
 | OTP extraction as a separate `otp-extraction` child job | Extracted inside the processing job, saved in the same transaction | It is a fast regex pass; a second queue would delay `NEW_EMAIL` and add a failure point |
 | Attachment rules enforced by both ingest and worker | Enforced by the worker | The worker is where files are uploaded; ingest will only check size and that the mail parses |
-| Live updates over SSE | The dashboard polls every 5 seconds | Temporary, until Day 7 |
+| `NEW_EMAIL` carries sender, subject, OTP and time, and the dashboard shows a toast | It carries `inboxId` and `messageId`; the dashboard refetches the affected lists and shows no toast | The lists already show those fields; a toast can be added later without changing the API |
+| SSE gateway keeps a map from session to connections | The same, plus a limit of 5 streams per session and a 30-minute stream lifetime | Bounds memory per session, and makes an expired session stop receiving events |
 
 ## Not built yet
 
 - The CSRF check (required `X-Requested-With` header on mutations) and the general limit of 60 requests per minute.
-- The `INBOX_DELETED` and `INBOX_EXPIRED` events.
+- The `INBOX_EXPIRED` event. The dashboard already handles it; the expiration job on Day 10 will publish it.
+- A toast for new mail.
 - Expired inboxes are hidden by every query, but no job marks them expired or deletes their data yet.
 - Nothing re-queues jobs from the dead-letter queue yet (`failed-job-retry`, Day 10).
 - Nothing deletes stored objects yet. A raw file uploaded for a duplicate that BullMQ then skips is left behind until the cleanup jobs on Day 10.
 - Helmet and CORS settings.
 
 ## Plan for the coming days
-
-### Day 7: realtime updates
-
-- `GET /api/events` as an SSE stream per session, fed by Redis Pub/Sub, with a 25-second heartbeat and `Last-Event-ID` replay from `email_events`.
-- The dashboard subscribes and refreshes the affected lists; remove the 5-second polling.
-- Publish `INBOX_DELETED`.
-
-Done when a new message appears without a refresh or a poll.
 
 ### Day 8: ingest app
 
@@ -184,13 +199,14 @@ Done when an expired inbox disappears from the dashboard on its own and its data
 
 ### Day 11: production deployment and hardening
 
-- Production Docker Compose and Nginx configuration: TLS, rate limits, unbuffered SSE.
+- Production Docker Compose and Nginx configuration: TLS and rate limits. For `/api/events`: `proxy_buffering off` and a read timeout above 30 minutes, so streams end on the server's schedule.
 - Set `NODE_ENV=production` (turns on the cookie's `Secure` flag) and `TRUST_PROXY_HOPS=1`.
 - CSRF header check, Helmet, the 60 requests per minute limit.
 - A strong `SERVER_PEPPER` and real database and Redis passwords, kept out of images.
 
 ## Things that are easy to trip over
 
+- **Each open dashboard tab holds one event stream.** A session can hold 5; a sixth tab gets 429 and falls back to polling every 30 seconds while it retries.
 - **The worker must be running for `pnpm mail:test` mail to appear.** `pnpm dev` starts it. Queued jobs wait in Redis until it does.
 - **The RustFS credentials are the ones in `docker-compose.dev.yml`.** Changing `S3_ACCESS_KEY` or `S3_SECRET_KEY` in `.env` alone breaks storage.
 - **Rate limits during local testing.** 5 sessions per hour per IP and 20 inbox creations per hour. To reset: `docker exec mail-service-dev-redis-1 sh -c "redis-cli --scan --pattern 'rl:*' | xargs -r redis-cli del"`.
