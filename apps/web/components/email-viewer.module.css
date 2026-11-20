@@ -163,6 +163,17 @@
   white-space: nowrap;
 }
 
+a.attachmentName {
+  color: inherit;
+  text-decoration: underline;
+  text-decoration-color: var(--muted);
+  text-underline-offset: 2px;
+}
+
+a.attachmentName:hover {
+  text-decoration-color: currentColor;
+}
+
 .attachment[data-blocked="true"] .attachmentName {
   text-decoration: line-through;
 }

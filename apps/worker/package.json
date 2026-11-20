@@ -12,10 +12,12 @@
     "dev": "nest start --watch",
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
+    "mail:test": "node src/dev/send-test-mail.ts",
     "lint": "oxlint --type-aware src/",
     "test": "vitest run --passWithNoTests",
     "check-types": "tsc --noEmit",
-    "test:watch": "vitest"
+    "test:watch": "vitest",
+    "test:e2e": "vitest run --config ./vitest.config.e2e.ts"
   },
   "dependencies": {
     "@nestjs/common": "^12.0.1",
@@ -24,15 +26,21 @@
     "@repo/events": "workspace:*",
     "@repo/queue": "workspace:*",
     "@repo/storage": "workspace:*",
+    "bullmq": "^6.7.8",
+    "ioredis": "^6.0.0",
+    "mailparser": "^3.14.5",
     "reflect-metadata": "^0.2.2",
-    "rxjs": "^7.8.1"
+    "rxjs": "^7.8.1",
+    "sanitize-html": "^2.18.2"
   },
   "devDependencies": {
     "@nestjs/cli": "^12.0.0",
     "@nestjs/schematics": "^12.0.0",
     "@nestjs/testing": "^12.0.1",
     "@repo/typescript-config": "workspace:*",
+    "@types/mailparser": "^3.9.0",
     "@types/node": "^24.0.0",
+    "@types/sanitize-html": "^2.16.2",
     "oxlint": "^1.58.0",
     "oxlint-tsgolint": "^7.0.2001",
     "prettier": "^3.4.2",

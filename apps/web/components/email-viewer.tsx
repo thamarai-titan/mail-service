@@ -203,12 +203,23 @@ function Message({
                 data-blocked={attachment.isBlocked}
               >
                 <PaperclipIcon />
-                <span
-                  className={styles.attachmentName}
-                  title={attachment.filename}
-                >
-                  {attachment.filename}
-                </span>
+                {attachment.isBlocked ? (
+                  <span
+                    className={styles.attachmentName}
+                    title={attachment.filename}
+                  >
+                    {attachment.filename}
+                  </span>
+                ) : (
+                  <a
+                    className={styles.attachmentName}
+                    title={`Download ${attachment.filename}`}
+                    href={`/api/attachments/${attachment.id}/download`}
+                    download={attachment.filename}
+                  >
+                    {attachment.filename}
+                  </a>
+                )}
                 <span className={styles.attachmentNote}>
                   {attachment.isBlocked
                     ? "Blocked for safety"

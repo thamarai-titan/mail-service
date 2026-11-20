@@ -9,12 +9,14 @@ import { RealtimeModule } from './realtime/realtime.module.js';
 import { RedisModule } from './redis/redis.module.js';
 import { SecurityModule } from './security/security.module.js';
 import { SessionModule } from './session/session.module.js';
+import { StorageModule } from './storage/storage.module.js';
 
 @Module({
   imports: [
     ConfigModule,
     PrismaModule,
     RedisModule,
+    StorageModule,
     HealthModule,
     SecurityModule,
     SessionModule,

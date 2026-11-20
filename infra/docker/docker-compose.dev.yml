@@ -33,6 +33,24 @@ services:
       timeout: 3s
       retries: 30
 
+  # S3-compatible object storage for raw messages and attachments (MinIO's images are no
+  # longer published). The worker creates the bucket on start.
+  rustfs:
+    image: rustfs/rustfs:1.0.4
+    environment:
+      RUSTFS_ACCESS_KEY: mailservice
+      RUSTFS_SECRET_KEY: mailservice-dev-secret
+    ports:
+      - "127.0.0.1:9000:9000"
+    volumes:
+      - rustfs-data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:9000/health"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+
 volumes:
   postgres-data:
   redis-data:
+  rustfs-data:

@@ -1,4 +1,5 @@
 import { Injectable } from '@nestjs/common';
+import { storageConfigFromEnv, type StorageConfig } from '@repo/storage';
 
 // Apps run from their own directory (turbo) or the repository root; the shared .env is at the root.
 // Variables already set in the process environment win over the file.
@@ -33,6 +34,8 @@ function serverPepper(): string {
 export class AppConfig {
   readonly databaseUrl = required('DATABASE_URL');
   readonly redisUrl = required('REDIS_URL');
+  /** Object storage holding attachments and raw messages. */
+  readonly storage: StorageConfig = storageConfigFromEnv();
   /** HMAC key for session tokens and IP addresses. Changing it invalidates every session. */
   readonly serverPepper = serverPepper();
   /** Browsers only send Secure cookies over HTTPS, so plain-HTTP local development turns it off. */
