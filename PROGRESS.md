@@ -2,7 +2,7 @@
 
 Where the build stands and what comes next. The full system design is in [readme.md](readme.md); this file tracks how much of it exists.
 
-**Last updated:** 20 Nov 2026, after Day 7.
+**Last updated:** 20 Nov 2026, after Day 8.
 **Branch:** all work below is on `main`. From Day 6 onward, work continues directly on `main`.
 
 ## Status at a glance
@@ -16,12 +16,12 @@ Where the build stands and what comes next. The full system design is in [readme
 | 5 | Web dashboard | Done | `96c627b` |
 | 6 | Worker pipeline | Done | `7c5fd45` |
 | 7 | Realtime updates (SSE) | Done | `18b2824` |
-| 8 | Ingest app (LMTP) | Next | |
-| 9 | Real mail: Postfix and DNS on the VPS | To do | |
+| 8 | Ingest app (LMTP) | Done | `c79bac3` |
+| 9 | Real mail: Postfix and DNS on the VPS | Next | |
 | 10 | Expiration and cleanup jobs | To do | |
 | 11 | Production deployment and hardening | To do | |
 
-What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. A queued email goes through the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. Mail does not arrive from the internet yet: `pnpm mail:test` queues one by hand.
+What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. Mail delivered over LMTP goes through the ingest app and the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. The ingest app also answers Postfix's recipient check. Mail does not arrive from the internet yet: Postfix is not set up, so `pnpm mail:test` sends it by hand.
 
 ## Running it locally
 
@@ -33,17 +33,20 @@ pnpm install
 pnpm infra:up           # PostgreSQL, Redis and RustFS (object storage) in Docker
 pnpm db:migrate         # apply migrations
 pnpm db:seed            # insert the mail domain (mail.localhost)
-pnpm dev                # web on :3000, API on :3001, plus the worker
+pnpm dev                # web on :3000, API on :3001, plus the worker and ingest (LMTP :2525, policy :10040)
 ```
 
-An `.env` created before Day 6 needs the `S3_*` lines from `.env.example`.
+An `.env` created before Day 6 needs the `S3_*` lines from `.env.example`. One created before Day 8 also needs the `INGEST_*` lines, though the defaults match them.
 
 Open `http://localhost:3000`, generate an address, then send it mail through the worker. It appears without a refresh:
 
 ```
-pnpm mail:test <address>                # a sample with an OTP, an inline image and two attachments
-pnpm mail:test <address> message.eml    # any .eml file
+pnpm mail:test <address> --lmtp                # through ingest over LMTP, the way Postfix delivers
+pnpm mail:test <address>                       # straight onto the queue; only the worker needs to run
+pnpm mail:test <address> message.eml --lmtp    # any .eml file
 ```
+
+Without a file it sends a sample with an OTP, an inline image and two attachments. With `swaks` installed, `swaks --to <address> --server 127.0.0.1:2525 --protocol LMTP` works too.
 
 `pnpm db:fake-mail <address>` still inserts three messages straight into the database, without the worker. Its attachments are not in storage, so downloading them gives a 404.
 
@@ -55,6 +58,8 @@ pnpm --filter api test         # unit tests
 pnpm --filter api test:e2e     # needs infra:up and db:seed
 pnpm --filter worker test
 pnpm --filter worker test:e2e  # needs infra:up and db:seed
+pnpm --filter ingest test
+pnpm --filter ingest test:e2e  # needs infra:up and db:seed
 ```
 
 The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the folder in Bruno and pick the `local` environment. Run "Create session" first; Bruno keeps the cookie for the other requests.
@@ -82,7 +87,7 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 - Addresses are 12 random characters on the seeded domain and live for 60 minutes. Extending adds an hour, up to 24 hours after creation.
 - A session can hold 10 active inboxes. The quota check locks the session row, so concurrent requests cannot exceed it.
 - 20 creations per hour per session and per IP.
-- Every live address is registered in Redis under `addr:<address>` with the inbox's expiry. The SMTP recipient check will read this.
+- Every live address is registered in Redis under `addr:<address>` with the inbox's expiry. The ingest app's recipient check reads it.
 - Code: [apps/api/src/inbox/](apps/api/src/inbox/).
 
 ### Day 4: message read API
@@ -142,6 +147,36 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
   - After an API restart, mail stored while the API was down appeared about 3 seconds after it came back.
 - Code: [apps/api/src/realtime/](apps/api/src/realtime/), [apps/web/hooks/use-live-updates.ts](apps/web/hooks/use-live-updates.ts).
 
+### Day 8: ingest app
+
+- [apps/ingest](apps/ingest/src/) runs two listeners for Postfix on `INGEST_HOST`, which defaults to `127.0.0.1`. Neither has authentication or TLS, so they must stay on loopback or the private link to the mail server.
+- **LMTP on port 2525** (`lmtp:inet:host:2525` in Postfix):
+  - Recipients are checked again at `RCPT TO`, in case an inbox expired after Postfix's check.
+  - At `DATA` the message is parsed once to compute the dedupe hash.
+  - Each accepted recipient gets its own raw copy in `raw/` and its own job. Separate copies matter because the worker deletes its copy when it discards mail for a gone inbox.
+  - LMTP answers each recipient separately, so Postfix retries only the ones that failed:
+
+    | Case | Reply |
+    |---|---|
+    | Queued | `250 2.0.0 Queued` |
+    | Inbox gone by `DATA` | `550 5.1.1` |
+    | Lookup, storage or queue failure | `451 4.3.0`; Postfix keeps the mail and retries. A raw copy whose job could not be queued is deleted. |
+    | Over `MAX_MESSAGE_BYTES` (10 MB) | `552` |
+    | Cannot be parsed | Kept in `quarantine/` and answered 250, so nothing bounces to a forged sender. A `451` if even the quarantine upload fails. |
+
+- **Postfix policy service on port 10040** (`check_policy_service inet:host:10040`):
+  - It speaks the Postfix policy delegation protocol.
+  - A live address gets `DUNNO`. Unknown addresses get `550 5.1.1 User unknown`, and expired ones `550 5.1.1 Mailbox expired`. A lookup failure gets `451 4.3.0`.
+  - Many requests can share one connection.
+- **Recipient lookup:**
+  - It reads `addr:<address>` in Redis.
+  - On a miss, or while Redis is down, it asks PostgreSQL. That is how it tells expired from unknown, and a live inbox missing from Redis is written back.
+  - Addresses are matched case-insensitively.
+- Redis commands in ingest fail at once while Redis is down (no offline queue), and adding a job times out after 5 seconds. A delivery then gets `451` instead of hanging.
+- The `addr:` key helpers moved to [@repo/queue](packages/queue/src/addresses.ts), and the API uses them too.
+- Checked: in headless Chrome, a message sent with `pnpm mail:test <address> --lmtp` appeared in the dashboard about 0.2 seconds after the command finished.
+- Code: [apps/ingest/src/](apps/ingest/src/).
+
 ## Differences from the design
 
 | Design says | What was built | Why |
@@ -153,7 +188,9 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 | MinIO for local object storage | RustFS | MinIO's images can no longer be pulled from Docker Hub or Quay |
 | Ingest parses the mail and passes a `parsedRef` to the worker | The worker reads the raw `.eml` and parses it itself | One stored copy of each message, and any job can be replayed from the raw file |
 | OTP extraction as a separate `otp-extraction` child job | Extracted inside the processing job, saved in the same transaction | It is a fast regex pass; a second queue would delay `NEW_EMAIL` and add a failure point |
-| Attachment rules enforced by both ingest and worker | Enforced by the worker | The worker is where files are uploaded; ingest will only check size and that the mail parses |
+| Attachment rules enforced by both ingest and worker | Enforced by the worker | The worker is where files are uploaded; ingest only checks size and that the mail parses |
+| Recipient policy as an HTTP endpoint, `/policy/recipient` | A TCP service speaking Postfix's policy delegation protocol | `check_policy_service` speaks that protocol, not HTTP |
+| MIME depth and part-count limits during parsing | Not built; the 10 MB size limit is the only bound | mailparser has no option for them; revisit if hostile mail causes trouble |
 | `NEW_EMAIL` carries sender, subject, OTP and time, and the dashboard shows a toast | It carries `inboxId` and `messageId`; the dashboard refetches the affected lists and shows no toast | The lists already show those fields; a toast can be added later without changing the API |
 | SSE gateway keeps a map from session to connections | The same, plus a limit of 5 streams per session and a 30-minute stream lifetime | Bounds memory per session, and makes an expired session stop receiving events |
 
@@ -169,22 +206,12 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 
 ## Plan for the coming days
 
-### Day 8: ingest app
-
-Build the LMTP server in [apps/ingest](apps/ingest) (design section 4, steps E8 to E15).
-
-- Accept a message over LMTP, store the raw `.eml`, parse it with mailparser, apply attachment rules, resolve the inbox, enqueue the job.
-- The recipient policy endpoint Postfix will call, backed by the `addr:` keys in Redis.
-- Move the `addr:` key helper from the API into a shared package so ingest uses the same one.
-- Queue jobs with `EMAIL_PROCESSING_JOB_OPTIONS` and `emailProcessingJobId` from `@repo/queue`, as [send-test-mail.ts](apps/worker/src/dev/send-test-mail.ts) does.
-
-Done when a message sent to the local LMTP port with `swaks` lands in the dashboard.
-
 ### Day 9: real mail on the VPS
 
 A domain and a VPS are already available. Needed before starting: the domain name, the VPS provider, and confirmation that the provider allows inbound port 25.
 
-- Postfix configuration in [infra/postfix](infra/postfix): postscreen, recipient check at `RCPT TO`, 10 MB size limit, LMTP hand-off to ingest.
+- Postfix configuration in [infra/postfix](infra/postfix): postscreen, `check_policy_service inet:<ingest>:10040` at `RCPT TO`, `message_size_limit = 10485760`, and `lmtp:inet:<ingest>:2525` as the transport for the mail domain.
+- If Postfix and ingest are on different machines, a private link between them (the design uses WireGuard), with `INGEST_HOST` set to the ingest side of it.
 - DNS: MX record, plus SPF and DMARC records that reject mail claiming to come from the domain (it only receives).
 - Seed the real domain in place of `mail.localhost`.
 
@@ -207,7 +234,8 @@ Done when an expired inbox disappears from the dashboard on its own and its data
 ## Things that are easy to trip over
 
 - **Each open dashboard tab holds one event stream.** A session can hold 5; a sixth tab gets 429 and falls back to polling every 30 seconds while it retries.
-- **The worker must be running for `pnpm mail:test` mail to appear.** `pnpm dev` starts it. Queued jobs wait in Redis until it does.
+- **The worker must be running for `pnpm mail:test` mail to appear, and ingest too with `--lmtp`.** `pnpm dev` starts both. Queued jobs wait in Redis until the worker runs.
+- **A Redis `addr:` key can outlive its inbox when a session is deleted directly in the database** (as tests do). Ingest then accepts the mail and the worker discards it, which is harmless. The cleanup jobs on Day 10 make this rare.
 - **The RustFS credentials are the ones in `docker-compose.dev.yml`.** Changing `S3_ACCESS_KEY` or `S3_SECRET_KEY` in `.env` alone breaks storage.
 - **Rate limits during local testing.** 5 sessions per hour per IP and 20 inbox creations per hour. To reset: `docker exec mail-service-dev-redis-1 sh -c "redis-cli --scan --pattern 'rl:*' | xargs -r redis-cli del"`.
 - **`TRUST_PROXY_HOPS` must be 1 behind Nginx.** Otherwise every user shares one IP for the rate limits.
