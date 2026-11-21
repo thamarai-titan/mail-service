@@ -2,7 +2,7 @@
 
 Where the build stands and what comes next. The full system design is in [readme.md](readme.md); this file tracks how much of it exists.
 
-**Last updated:** 20 Nov 2026, after Day 8.
+**Last updated:** 21 Nov 2026, after Day 9.
 **Branch:** all work below is on `main`. From Day 6 onward, work continues directly on `main`.
 
 ## Status at a glance
@@ -17,11 +17,11 @@ Where the build stands and what comes next. The full system design is in [readme
 | 6 | Worker pipeline | Done | `7c5fd45` |
 | 7 | Realtime updates (SSE) | Done | `18b2824` |
 | 8 | Ingest app (LMTP) | Done | `c79bac3` |
-| 9 | Real mail: Postfix and DNS on the VPS | Next | |
-| 10 | Expiration and cleanup jobs | To do | |
+| 9 | Real mail: Postfix and DNS on the VPS | Done | |
+| 10 | Expiration and cleanup jobs | Next | |
 | 11 | Production deployment and hardening | To do | |
 
-What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. Mail delivered over LMTP goes through the ingest app and the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. The ingest app also answers Postfix's recipient check. Mail does not arrive from the internet yet: Postfix is not set up, so `pnpm mail:test` sends it by hand.
+What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. Mail delivered over LMTP goes through the ingest app and the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. The ingest app also answers Postfix's recipient check. Real mail arrives from the internet: Postfix on the VPS (`mx.ilotus.dev`) accepts mail for `@mail.ilotus.dev` and, until the app is deployed on Day 11, reaches the app on a laptop through an SSH tunnel.
 
 ## Running it locally
 
@@ -177,6 +177,36 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 - Checked: in headless Chrome, a message sent with `pnpm mail:test <address> --lmtp` appeared in the dashboard about 0.2 seconds after the command finished.
 - Code: [apps/ingest/src/](apps/ingest/src/).
 
+### Day 9: real mail
+
+Addresses will be `@mail.ilotus.dev`. The apex `ilotus.dev` already has a website and name.com mail forwarding, so it is left alone. Postfix runs on the VPS host as `mx.ilotus.dev`; there is one VPS, so the app will run beside it and no WireGuard link is needed. The full guide is [infra/postfix/README.md](infra/postfix/README.md).
+
+Done:
+
+- [setup.sh](infra/postfix/setup.sh) installs and configures Postfix with `postconf`, so it can be re-run:
+  - receive-only, with no local delivery and no outbound mail, so nothing bounces to forged senders;
+  - relays `mail.ilotus.dev` to ingest over LMTP;
+  - checks recipients with the policy service, and answers `451` if ingest cannot be reached;
+  - postscreen, without the deep tests that delay first-time senders;
+  - 10 MB limit, rate limits, opportunistic TLS;
+  - retries every 1 to 5 minutes for 2 hours.
+- Checked in an Ubuntu 24.04 container against the local app:
+  - mail to a live inbox went through postscreen, STARTTLS and LMTP and was stored with its OTP;
+  - an unknown address got `550 5.1.1`, a relay attempt `554` and an 11 MB message `552`;
+  - with ingest unreachable, recipients got `451`.
+- `pnpm db:seed` now deactivates every domain except `MAIL_DOMAIN`, so new addresses use the seeded domain. Inboxes on the old domain keep receiving until they expire.
+
+- On the VPS (Ubuntu 24.04, Terapeer):
+  - DNS is live at name.com: `A mx`, `MX mail → mx.ilotus.dev`, SPF `-all` on `mail` and `mx`, DMARC `p=reject` on `_dmarc.mail`.
+  - `setup.sh` ran; port 25 had been closed by ufw and the script opened it. Port 25 answers from the internet as `mx.ilotus.dev`.
+  - The app runs on a laptop with `MAIL_DOMAIN=mail.ilotus.dev`, reached through an SSH reverse tunnel (README step 4).
+- Checked: a message sent from Gmail arrived in the dashboard.
+
+Left over:
+
+- Reverse DNS (PTR) for the VPS IP still points to the provider's name; ask Terapeer to set it to `mx.ilotus.dev`.
+- STARTTLS uses the self-signed certificate. Port 80 is closed in ufw, so certbot has not run yet.
+
 ## Differences from the design
 
 | Design says | What was built | Why |
@@ -193,6 +223,8 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 | MIME depth and part-count limits during parsing | Not built; the 10 MB size limit is the only bound | mailparser has no option for them; revisit if hostile mail causes trouble |
 | `NEW_EMAIL` carries sender, subject, OTP and time, and the dashboard shows a toast | It carries `inboxId` and `messageId`; the dashboard refetches the affected lists and shows no toast | The lists already show those fields; a toast can be added later without changing the API |
 | SSE gateway keeps a map from session to connections | The same, plus a limit of 5 streams per session and a 30-minute stream lifetime | Bounds memory per session, and makes an expired session stop receiving events |
+| Separate mail and app VPS joined by WireGuard | One VPS: Postfix on the host, ingest on its loopback | Only one server is available; ingest's ports never leave loopback |
+| Addresses on the main domain | Addresses on `mail.ilotus.dev` | `ilotus.dev` already has a website and mail forwarding |
 
 ## Not built yet
 
@@ -205,17 +237,6 @@ The [bruno/](bruno/) folder is a Bruno collection of every API request. Open the
 - Helmet and CORS settings.
 
 ## Plan for the coming days
-
-### Day 9: real mail on the VPS
-
-A domain and a VPS are already available. Needed before starting: the domain name, the VPS provider, and confirmation that the provider allows inbound port 25.
-
-- Postfix configuration in [infra/postfix](infra/postfix): postscreen, `check_policy_service inet:<ingest>:10040` at `RCPT TO`, `message_size_limit = 10485760`, and `lmtp:inet:<ingest>:2525` as the transport for the mail domain.
-- If Postfix and ingest are on different machines, a private link between them (the design uses WireGuard), with `INGEST_HOST` set to the ingest side of it.
-- DNS: MX record, plus SPF and DMARC records that reject mail claiming to come from the domain (it only receives).
-- Seed the real domain in place of `mail.localhost`.
-
-Done when an email sent from a real service arrives in the dashboard.
 
 ### Day 10: expiration and cleanup
 
