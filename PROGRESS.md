@@ -2,7 +2,7 @@
 
 Where the build stands and what comes next. The full system design is in [readme.md](readme.md); this file tracks how much of it exists.
 
-**Last updated:** 21 Nov 2026, after Day 9.
+**Last updated:** 21 Nov 2026, after Day 10.
 **Branch:** all work below is on `main`. From Day 6 onward, work continues directly on `main`.
 
 ## Status at a glance
@@ -17,11 +17,11 @@ Where the build stands and what comes next. The full system design is in [readme
 | 6 | Worker pipeline | Done | `7c5fd45` |
 | 7 | Realtime updates (SSE) | Done | `18b2824` |
 | 8 | Ingest app (LMTP) | Done | `c79bac3` |
-| 9 | Real mail: Postfix and DNS on the VPS | Done | |
-| 10 | Expiration and cleanup jobs | Next | |
-| 11 | Production deployment and hardening | To do | |
+| 9 | Real mail: Postfix and DNS on the VPS | Done | `322063b` |
+| 10 | Expiration and cleanup jobs | Done | |
+| 11 | Production deployment and hardening | Next | |
 
-What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. Mail delivered over LMTP goes through the ingest app and the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. The ingest app also answers Postfix's recipient check. Real mail arrives from the internet: Postfix on the VPS (`mx.ilotus.dev`) accepts mail for `@mail.ilotus.dev` and, until the app is deployed on Day 11, reaches the app on a laptop through an SSH tunnel.
+What works today: open the dashboard, get an anonymous session, generate addresses, and read mail in a unified or per-address view. Mail delivered over LMTP goes through the ingest app and the worker and appears in the open dashboard within a second, with clean HTML, its OTP and downloadable attachments. The ingest app also answers Postfix's recipient check. Real mail arrives from the internet: Postfix on the VPS (`mx.ilotus.dev`) accepts mail for `@mail.ilotus.dev` and, until the app is deployed on Day 11, reaches the app on a laptop through an SSH tunnel. Expired inboxes leave the dashboard within a minute, and their mail is deleted within the hour.
 
 ## Running it locally
 
@@ -48,6 +48,12 @@ pnpm mail:test <address> message.eml --lmtp    # any .eml file
 
 Without a file it sends a sample with an OTP, an inline image and two attachments. With `swaks` installed, `swaks --to <address> --server 127.0.0.1:2525 --protocol LMTP` works too.
 
+To run a maintenance job now instead of waiting for its schedule (the worker must be running):
+
+```
+pnpm maintenance:run inbox-expiration     # or session-expiration, message-cleanup, attachment-cleanup, failed-job-retry
+```
+
 `pnpm db:fake-mail <address>` still inserts three messages straight into the database, without the worker. Its attachments are not in storage, so downloading them gives a 404.
 
 Checks:
@@ -57,7 +63,7 @@ pnpm check-types && pnpm lint
 pnpm --filter api test         # unit tests
 pnpm --filter api test:e2e     # needs infra:up and db:seed
 pnpm --filter worker test
-pnpm --filter worker test:e2e  # needs infra:up and db:seed
+pnpm --filter worker test:e2e  # needs infra:up and db:seed; stop pnpm dev first
 pnpm --filter ingest test
 pnpm --filter ingest test:e2e  # needs infra:up and db:seed
 ```
@@ -207,6 +213,35 @@ Left over:
 - Reverse DNS (PTR) for the VPS IP still points to the provider's name; ask Terapeer to set it to `mx.ilotus.dev`.
 - STARTTLS uses the self-signed certificate. Port 80 is closed in ufw, so certbot has not run yet.
 
+### Day 10: expiration and cleanup
+
+Five BullMQ job schedulers in the worker ([apps/worker/src/maintenance/](apps/worker/src/maintenance/)). Each job has its own queue and runs one at a time per worker process. Every job is idempotent and works in batches of 500, so a missed or doubled run does no harm. Schedules and retention times are in [maintenance-settings.ts](apps/worker/src/maintenance/maintenance-settings.ts).
+
+| Job | Runs | What it does |
+|---|---|---|
+| `inbox-expiration` | every minute | Marks inboxes past `expires_at` as `expired`, deletes their `addr:` keys and publishes `INBOX_EXPIRED` to the session |
+| `session-expiration` | every 15 minutes | Marks idle sessions `expired` with their live inboxes (and deletes those `addr:` keys). Deletes sessions 7 days after expiry, which cascades to their inboxes and events |
+| `message-cleanup` | hourly | Deletes the messages of expired or deleted inboxes, with their raw files and attachments in storage. Inbox rows stay until their session is deleted |
+| `attachment-cleanup` | daily, 03:00 UTC | Sweeps `raw/` and `att/` for files no row refers to and older than 24 hours, and deletes `quarantine/` files older than 7 days |
+| `failed-job-retry` | every 10 minutes | Re-queues dead-letter jobs whose failure was temporary |
+
+- The storage sweep never deletes a raw file that a queued, retrying, failed or dead-letter job still points to.
+- It catches:
+  - raw copies of duplicates that BullMQ skipped;
+  - files of messages deleted one at a time in the dashboard;
+  - files left over when a run stopped halfway.
+- Dead letters:
+  - The processing worker now records whether a failure is `retryable`. A missing or unparseable raw file is not.
+  - `failed-job-retry` puts a retryable job back with fresh attempts, at most 3 times; the count is kept in the job's `replays` field.
+  - If the failed job has already aged out of BullMQ, it queues a new one from the saved data.
+  - Entries older than 7 days are dropped.
+- `pnpm maintenance:run <job>` queues a job immediately.
+- Checked against the running app:
+  - An inbox with one message was pushed past its expiry. The open event stream received `INBOX_EXPIRED` 22 seconds later, at the next run.
+  - The inbox left the list, and its `addr:` key was gone.
+  - `message-cleanup` then deleted the message and its 2 stored files.
+- Tests: [maintenance.e2e-spec.ts](apps/worker/test/maintenance.e2e-spec.ts) covers each job, including keeping live data and young files.
+
 ## Differences from the design
 
 | Design says | What was built | Why |
@@ -225,25 +260,17 @@ Left over:
 | SSE gateway keeps a map from session to connections | The same, plus a limit of 5 streams per session and a 30-minute stream lifetime | Bounds memory per session, and makes an expired session stop receiving events |
 | Separate mail and app VPS joined by WireGuard | One VPS: Postfix on the host, ingest on its loopback | Only one server is available; ingest's ports never leave loopback |
 | Addresses on the main domain | Addresses on `mail.ilotus.dev` | `ilotus.dev` already has a website and mail forwarding |
+| message-cleanup deletes mail of dead inboxes after a retention window | Deleted at the next hourly run, with no extra window | Nobody can open an expired or deleted inbox, so keeping its mail serves no one |
+| failed-job-retry re-queues retryable DLQ jobs | The same, at most 3 times per job; unrecoverable failures stay in the DLQ for 7 days | A job that keeps failing would otherwise loop every 10 minutes |
 
 ## Not built yet
 
 - The CSRF check (required `X-Requested-With` header on mutations) and the general limit of 60 requests per minute.
-- The `INBOX_EXPIRED` event. The dashboard already handles it; the expiration job on Day 10 will publish it.
 - A toast for new mail.
-- Expired inboxes are hidden by every query, but no job marks them expired or deletes their data yet.
-- Nothing re-queues jobs from the dead-letter queue yet (`failed-job-retry`, Day 10).
-- Nothing deletes stored objects yet. A raw file uploaded for a duplicate that BullMQ then skips is left behind until the cleanup jobs on Day 10.
+- Alerts when the dead-letter queue is not empty (the design uses Alertmanager).
 - Helmet and CORS settings.
 
 ## Plan for the coming days
-
-### Day 10: expiration and cleanup
-
-- Jobs for inbox expiration, session expiration, message cleanup and attachment cleanup (design section 8).
-- Publish `INBOX_EXPIRED`.
-
-Done when an expired inbox disappears from the dashboard on its own and its data is removed.
 
 ### Day 11: production deployment and hardening
 
@@ -256,11 +283,12 @@ Done when an expired inbox disappears from the dashboard on its own and its data
 
 - **Each open dashboard tab holds one event stream.** A session can hold 5; a sixth tab gets 429 and falls back to polling every 30 seconds while it retries.
 - **The worker must be running for `pnpm mail:test` mail to appear, and ingest too with `--lmtp`.** `pnpm dev` starts both. Queued jobs wait in Redis until the worker runs.
-- **A Redis `addr:` key can outlive its inbox when a session is deleted directly in the database** (as tests do). Ingest then accepts the mail and the worker discards it, which is harmless. The cleanup jobs on Day 10 make this rare.
+- **A Redis `addr:` key can outlive its inbox when a session is deleted directly in the database** (as tests do). Ingest then accepts the mail and the worker discards it, which is harmless. `inbox-expiration` deletes such keys once the inbox's time is up.
 - **The RustFS credentials are the ones in `docker-compose.dev.yml`.** Changing `S3_ACCESS_KEY` or `S3_SECRET_KEY` in `.env` alone breaks storage.
 - **Rate limits during local testing.** 5 sessions per hour per IP and 20 inbox creations per hour. To reset: `docker exec mail-service-dev-redis-1 sh -c "redis-cli --scan --pattern 'rl:*' | xargs -r redis-cli del"`.
 - **`TRUST_PROXY_HOPS` must be 1 behind Nginx.** Otherwise every user shares one IP for the rate limits.
 - **Changing `SERVER_PEPPER` logs everyone out.** Stored token hashes no longer match.
 - **The e2e tests use the development database and Redis.** They clean up their own rows and clear all `rl:*` counters.
+- **The maintenance jobs act on the whole development database and bucket**, the worker e2e tests included. The `failed-job-retry` test drops every dead-letter entry.
 - **Two 401 responses on the first page load are expected.** They are what triggers session creation.
 - **Next.js and Turborepo are newer than most documentation.** Read the docs bundled in `node_modules` before changing their configuration; see [AGENTS.md](AGENTS.md).
