@@ -242,6 +242,53 @@ Five BullMQ job schedulers in the worker ([apps/worker/src/maintenance/](apps/wo
   - `message-cleanup` then deleted the message and its 2 stored files.
 - Tests: [maintenance.e2e-spec.ts](apps/worker/test/maintenance.e2e-spec.ts) covers each job, including keeping live data and young files.
 
+### Dashboard redesign
+
+- Tailwind CSS v4 and shadcn/ui (Radix, `nova` preset) replace the CSS modules. Animations use `motion`. Components live in [apps/web/components/app/](apps/web/components/app/), and the shadcn primitives in `components/ui/`.
+- **Visual language**, inspired by [ui.wensity.com](https://ui.wensity.com/):
+  - dark by default, on true neutral surfaces with one soft honey accent (it replaced a red that was hard on the eyes) and no gradients on controls;
+  - large two-tone headlines and monospace labels;
+  - panels set in a darker shell ([frame.tsx](apps/web/components/app/frame.tsx));
+  - buttons with a hairline top highlight;
+  - a faint film grain, and a red glow at the top of the page.
+  - The colour tokens are in [globals.css](apps/web/app/globals.css).
+- Name and search copy in one place: [lib/brand.ts](apps/web/lib/brand.ts). The working name is **Inboxhive**, "a hive of inboxes", and the logo is three honeycomb cells. The title, description and headings carry the searched terms ("temp mail", "temporary email", "disposable email").
+- **Layout:** app first, stacked top to bottom.
+  - A small two-line title: "Temp mail for testers" (the page's H1) and a description that names the 10-address limit.
+  - The address ticket.
+  - The address chips, when there are several addresses.
+  - The inbox, at one fixed screen-sized height in every state, so the page below never moves when mail arrives or a message opens or closes. While no message is open, the list uses the full width with one line per message, and an empty inbox shows "Waiting for mail" centred. Opening a message splits the inbox into list and email, scrolled to fill the screen.
+  - The big headline and marketing copy sit below the app.
+- **Address ticket** ([address-ticket.tsx](apps/web/components/app/address-ticket.tsx)): the address is the ticket, and the actions sit on a stub behind a perforated tear line with punched notches.
+  - Ticket side: the ticket number and "valid until" time, and Delete, which asks first.
+  - Stub side:
+    - Copy address;
+    - a countdown button that opens "Keep this address for" (1, 6, 12 or 24 hours), each with the exact time it keeps the address until;
+    - New, whose menu makes up to 5 at once.
+- **Pinned address:** once the ticket scrolls out of view, the address and a copy button ride along in the sticky top bar.
+- **Live indicator:** a small signal waveform with "receiving", flat and red while reconnecting.
+- **Keyboard shortcuts** are listed in the footer. Toasts sit bottom-right.
+- **Address chips:** a "your addresses N/10" panel. The chips sit on one line: "All inboxes" stays fixed on the left and the addresses scroll sideways (a mouse wheel scrolls them too), each with its time left and unread count. The selected chip is a soft amber tint. "copy all N" copies every address, one per line.
+- `PATCH /api/inboxes/:id/extend` accepts `{ "hours": 1 | 6 | 12 | 24 }`: keep the inbox until that many hours from now, capped at 24 hours after creation and never shortened. Without a body it still adds one hour.
+- **First visit:** an address is created automatically.
+- **Codes:** an inverted chip in the list. In the open message, each character sits in its own cell, animated in, with "Copy code".
+- **Verification links:** the viewer finds the "confirm your email" link in a message and shows its host with an "Open link" button.
+- **New mail opens by itself** on a wide screen when no message is open.
+- **Keyboard shortcuts**:
+  - `j` / `k`: next / previous message;
+  - `c`: copy the address;
+  - `y`: copy the code;
+  - `n`: new address;
+  - `Esc`: close the message.
+- **New mail:**
+  - a toast with the sender and code, with a "Copy code" or "Open" action;
+  - the unread count in the tab title;
+  - optional desktop notifications while the tab is in the background (the bell in the top bar).
+- **Micro-interactions:** new mail slides in with a brief glow, copy icons spring into a tick, and the selected address highlight glides. Skeletons replace "Loading…". Reduced-motion settings turn the animations off.
+- **Screen sizes:** on a phone, one pane at a time with a back button.
+- **For search engines:** below the app sit an editorial "How it works", feature showcases with illustrated previews, a spec row, an FAQ, and WebApplication and FAQPage JSON-LD. The page is prerendered as static HTML.
+- Checked in headless Chrome at 1440, 900 and 390 px, dark and light: a first visit, a message opened, and a toast for mail delivered while the page was open.
+
 ## Differences from the design
 
 | Design says | What was built | Why |
@@ -266,7 +313,6 @@ Five BullMQ job schedulers in the worker ([apps/worker/src/maintenance/](apps/wo
 ## Not built yet
 
 - The CSRF check (required `X-Requested-With` header on mutations) and the general limit of 60 requests per minute.
-- A toast for new mail.
 - Alerts when the dead-letter queue is not empty (the design uses Alertmanager).
 - Helmet and CORS settings.
 
