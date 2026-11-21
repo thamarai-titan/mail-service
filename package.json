@@ -12,7 +12,8 @@
     "db:migrate": "pnpm --filter @repo/database db:migrate",
     "db:seed": "pnpm --filter @repo/database db:seed",
     "db:fake-mail": "pnpm --filter @repo/database db:fake-mail",
-    "mail:test": "pnpm --filter worker mail:test"
+    "mail:test": "pnpm --filter worker mail:test",
+    "maintenance:run": "pnpm --filter worker maintenance:run"
   },
   "devDependencies": {
     "prettier": "3.9.6",

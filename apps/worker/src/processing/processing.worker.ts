@@ -78,8 +78,8 @@ export class ProcessingWorker
     error: Error,
   ): Promise<void> {
     const attempts = job.opts.attempts ?? 1;
-    const final =
-      error.name === 'UnrecoverableError' || job.attemptsMade >= attempts;
+    const unrecoverable = error.name === 'UnrecoverableError';
+    const final = unrecoverable || job.attemptsMade >= attempts;
     if (!final) {
       this.logger.warn(
         `Job ${job.id} attempt ${job.attemptsMade}/${attempts} failed, will retry: ${error.message}`,
@@ -96,6 +96,7 @@ export class ProcessingWorker
           jobId: job.id,
           data: job.data,
           failedReason: error.message,
+          retryable: !unrecoverable,
           attemptsMade: job.attemptsMade,
           failedAt: new Date().toISOString(),
         },

@@ -3,6 +3,7 @@ import {
   DeleteObjectCommand,
   GetObjectCommand,
   HeadBucketCommand,
+  ListObjectsV2Command,
   NoSuchKey,
   PutObjectCommand,
   S3Client,
@@ -57,6 +58,15 @@ export interface StoredObject {
   body: Readable;
   contentLength: number | undefined;
 }
+
+/** One entry of a bucket listing. */
+export interface ListedObject {
+  key: string;
+  lastModified: Date;
+}
+
+/** Deletes run this many at a time, so a large batch does not flood the server. */
+const DELETE_CONCURRENCY = 10;
 
 /** The S3 operations the apps need, against one bucket. */
 export class ObjectStorage {
@@ -128,6 +138,38 @@ export class ObjectStorage {
     await this.client.send(
       new DeleteObjectCommand({ Bucket: this.bucket, Key: key }),
     );
+  }
+
+  /** Deletes every key, a few at a time. Keys that do not exist are fine. */
+  async deleteMany(keys: readonly string[]): Promise<void> {
+    for (let i = 0; i < keys.length; i += DELETE_CONCURRENCY) {
+      await Promise.all(
+        keys.slice(i, i + DELETE_CONCURRENCY).map((key) => this.delete(key)),
+      );
+    }
+  }
+
+  /** The objects under a prefix, one page (up to 1000) at a time. */
+  async *listPages(prefix: string): AsyncGenerator<ListedObject[]> {
+    let continuationToken: string | undefined;
+    do {
+      const response = await this.client.send(
+        new ListObjectsV2Command({
+          Bucket: this.bucket,
+          Prefix: prefix,
+          ContinuationToken: continuationToken,
+        }),
+      );
+      const page = (response.Contents ?? []).flatMap((object) =>
+        object.Key && object.LastModified
+          ? [{ key: object.Key, lastModified: object.LastModified }]
+          : [],
+      );
+      if (page.length > 0) yield page;
+      continuationToken = response.IsTruncated
+        ? response.NextContinuationToken
+        : undefined;
+    } while (continuationToken);
   }
 
   destroy(): void {

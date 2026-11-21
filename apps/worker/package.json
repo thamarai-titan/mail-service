@@ -13,6 +13,7 @@
     "start:debug": "nest start --debug --watch",
     "start:prod": "node dist/main",
     "mail:test": "node src/dev/send-test-mail.ts",
+    "maintenance:run": "node src/dev/run-maintenance.ts",
     "lint": "oxlint --type-aware src/",
     "test": "vitest run --passWithNoTests",
     "check-types": "tsc --noEmit",

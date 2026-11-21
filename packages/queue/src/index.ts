@@ -29,6 +29,8 @@ export interface EmailProcessingJob {
   dedupeHash: string;
   /** When the mail server accepted the message, ISO 8601. */
   receivedAt: string;
+  /** How many times failed-job-retry has put this job back on the queue. */
+  replays?: number;
 }
 
 /** A job that used up its attempts, copied to the dead-letter queue for inspection or replay. */
@@ -37,6 +39,11 @@ export interface DeadLetterJob {
   jobId: string | undefined;
   data: EmailProcessingJob;
   failedReason: string;
+  /**
+   * False when a retry cannot help (raw file missing or unparseable). failed-job-retry
+   * only re-queues retryable entries.
+   */
+  retryable: boolean;
   attemptsMade: number;
   failedAt: string;
 }
