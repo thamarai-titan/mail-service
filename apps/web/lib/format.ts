@@ -39,3 +39,26 @@ export function formatBytes(bytes: number): string {
   if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
+
+const clock = new Intl.DateTimeFormat(undefined, {
+  hour: "numeric",
+  minute: "2-digit",
+});
+const weekdayClock = new Intl.DateTimeFormat(undefined, {
+  weekday: "short",
+  hour: "numeric",
+  minute: "2-digit",
+});
+
+/** "16:52" today, "tomorrow 09:10", or "Sat 09:10" further out. */
+export function formatUntil(ms: number): string {
+  const date = new Date(ms);
+  const today = new Date();
+  const tomorrow = new Date(today);
+  tomorrow.setDate(today.getDate() + 1);
+  if (date.toDateString() === today.toDateString()) return clock.format(date);
+  if (date.toDateString() === tomorrow.toDateString()) {
+    return `tomorrow ${clock.format(date)}`;
+  }
+  return weekdayClock.format(date);
+}
