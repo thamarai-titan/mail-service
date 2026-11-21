@@ -362,6 +362,62 @@ describe('Inboxes (e2e)', () => {
     );
   });
 
+  it('keeps an inbox until a chosen number of hours from now', async () => {
+    const { cookie } = await newSession();
+    const [inbox] = await createInboxes(cookie, 1);
+
+    const before = Date.now();
+    const response = await request(app.getHttpServer())
+      .patch(`/api/inboxes/${inbox!.id}/extend`)
+      .set('Cookie', cookie)
+      .send({ hours: 12 })
+      .expect(200);
+
+    const expiresAt = new Date(
+      (response.body as InboxBody).expiresAt,
+    ).getTime();
+    expect(expiresAt).toBeGreaterThanOrEqual(before + 12 * HOUR_MS);
+    expect(expiresAt).toBeLessThanOrEqual(Date.now() + 12 * HOUR_MS);
+    expect(await redis.hget(`addr:${inbox!.address}`, 'expiresAt')).toBe(
+      String(expiresAt),
+    );
+  });
+
+  it('caps a chosen duration at 24 hours after creation and never shortens', async () => {
+    const { cookie } = await newSession();
+    const [inbox] = await createInboxes(cookie, 1);
+    const createdAt = new Date(Date.now() - 20 * HOUR_MS);
+    const expiresAt = new Date(Date.now() + 2 * HOUR_MS);
+    await prisma.inbox.update({
+      where: { id: inbox!.id },
+      data: { createdAt, expiresAt },
+    });
+
+    const capped = await request(app.getHttpServer())
+      .patch(`/api/inboxes/${inbox!.id}/extend`)
+      .set('Cookie', cookie)
+      .send({ hours: 24 })
+      .expect(200);
+    expect(new Date((capped.body as InboxBody).expiresAt).getTime()).toBe(
+      createdAt.getTime() + 24 * HOUR_MS,
+    );
+
+    const unchanged = await request(app.getHttpServer())
+      .patch(`/api/inboxes/${inbox!.id}/extend`)
+      .set('Cookie', cookie)
+      .send({ hours: 1 })
+      .expect(200);
+    expect(new Date((unchanged.body as InboxBody).expiresAt).getTime()).toBe(
+      createdAt.getTime() + 24 * HOUR_MS,
+    );
+
+    await request(app.getHttpServer())
+      .patch(`/api/inboxes/${inbox!.id}/extend`)
+      .set('Cookie', cookie)
+      .send({ hours: 5 })
+      .expect(400);
+  });
+
   it('answers 404 when extending an expired inbox', async () => {
     const { cookie } = await newSession();
     const [inbox] = await createInboxes(cookie, 1);

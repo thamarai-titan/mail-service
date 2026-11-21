@@ -17,6 +17,7 @@ import { CurrentSession } from '../session/current-session.decorator.js';
 import { SessionGuard } from '../session/session.guard.js';
 import type { SessionContext } from '../session/session.types.js';
 import { parseCreateInboxesBody } from './create-inboxes.input.js';
+import { parseExtendInboxBody } from './extend-inbox.input.js';
 import { inboxNotFound } from './inbox.errors.js';
 import { InboxService, type InboxView } from './inbox.service.js';
 
@@ -68,8 +69,10 @@ export class InboxController {
   extend(
     @CurrentSession() session: SessionContext,
     @InboxId() id: string,
+    @Body() body: unknown,
   ): Promise<InboxView> {
-    return this.inboxes.extend(session.id, id);
+    const { hours } = parseExtendInboxBody(body);
+    return this.inboxes.extend(session.id, id, hours);
   }
 
   @Delete(':id')

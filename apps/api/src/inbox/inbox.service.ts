@@ -165,8 +165,16 @@ export class InboxService {
     }));
   }
 
-  /** Adds another hour, never beyond 24 hours after the inbox was created. */
-  async extend(sessionId: string, inboxId: string): Promise<InboxView> {
+  /**
+   * Keeps the inbox longer, never beyond 24 hours after it was created. Without `hours` it adds
+   * one hour to the current expiry; with `hours` it keeps it until that many hours from now,
+   * and never shortens it.
+   */
+  async extend(
+    sessionId: string,
+    inboxId: string,
+    hours?: number,
+  ): Promise<InboxView> {
     const inbox = await this.prisma.$transaction(async (tx) => {
       // Scoping every query by session id is what makes another session's inbox a 404.
       const current = await tx.inbox.findFirst({
@@ -180,11 +188,15 @@ export class InboxService {
       });
       if (!current) throw inboxNotFound();
 
+      const wanted =
+        hours === undefined
+          ? current.expiresAt.getTime() + INBOX_TTL_MS
+          : Math.max(
+              current.expiresAt.getTime(),
+              Date.now() + hours * INBOX_TTL_MS,
+            );
       const expiresAt = new Date(
-        Math.min(
-          current.expiresAt.getTime() + INBOX_TTL_MS,
-          current.createdAt.getTime() + MAX_INBOX_LIFETIME_MS,
-        ),
+        Math.min(wanted, current.createdAt.getTime() + MAX_INBOX_LIFETIME_MS),
       );
       return tx.inbox.update({
         where: { id: inboxId },
